@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Nizamiye Sabit Giriş Terminali</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body style="display:flex; align-items:center; justify-content:center; min-height:90vh;">
+  <div class="card" style="max-width:380px; width:100%; text-align:center;">
+    <h2 style="color:var(--primary); margin-bottom:0.5rem;">Kurum Giriş Terminali</h2>
+    <p style="font-size:0.8rem; color:var(--text-muted); margin-bottom:1.5rem;">
+      Yalnızca akıllı telefonu bulunmayan veya WebAuthn desteklemeyen personel içindir.
+    </p>
+
+    <div id="termAlert" class="alert"></div>
+
+    <form id="termForm">
+      <div class="form-group" style="text-align:left;">
+        <label>Personel Numarası</label>
+        <input type="text" id="termEmpNo" class="form-control" required>
+      </div>
+      <div class="form-group" style="text-align:left;">
+        <label>6 Haneli Güvenlik PIN</label>
+        <input type="password" id="termPin" class="form-control" maxlength="6" required>
+      </div>
+      <button type="submit" class="btn-large btn-primary" style="font-size:1rem; padding:0.8rem;">Girişi Onayla</button>
+    </form>
+  </div>
+
+  <script>
+    document.getElementById('termForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const alertBox = document.getElementById('termAlert');
+      alertBox.style.display = 'none';
+
+      const res = await fetch('/api/terminal/check-in', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          employee_no: document.getElementById('termEmpNo').value,
+          pin: document.getElementById('termPin').value
+        })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        alertBox.className = 'alert alert-success';
+        alertBox.innerText = data.message;
+        alertBox.style.display = 'block';
+        document.getElementById('termForm').reset();
+      } else {
+        alertBox.className = 'alert alert-error';
+        alertBox.innerText = data.error;
+        alertBox.style.display = 'block';
+      }
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Personel Mesai Takip</title>
+  <link rel="stylesheet" href="/css/style.css">
+  <script src="https://unpkg.com/@simplewebauthn/browser/dist/bundle/index.umd.min.js"></script>
+</head>
+<body>
+  <div class="container">
+    <header class="brand-header">
+      <h1>Kamu Hizmet Portalı</h1>
+      <p>Yüklenici Personel Mobil Mesai Bildirimi</p>
+    </header>
+
+    <div id="alertBox" class="alert"></div>
+
+    <!-- 1. GİRİŞ EKRANI -->
+    <div id="loginSection" class="card">
+      <form id="loginForm">
+        <div class="form-group">
+          <label for="empNo">Personel No</label>
+          <input type="text" id="empNo" class="form-control" required autocomplete="username">
+        </div>
+        <div class="form-group">
+          <label for="password">Şifre</label>
+          <input type="password" id="password" class="form-control" required autocomplete="current-password">
+        </div>
+        <button type="submit" class="btn-large btn-primary" style="font-size: 1rem; padding: 0.8rem;">Giriş Yap</button>
+      </form>
+    </div>
+
+    <!-- 2. CİHAZ EŞLEŞTİRME EKRANI -->
+    <div id="pairDeviceSection" class="card" style="display:none; text-align: center;">
+      <h2 style="font-size: 1.1rem; margin-bottom: 0.5rem;">Cihaz Doğrulama</h2>
+      <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1.5rem;">
+        Mesai kaydı yapabilmek için bu cep telefonunu biyometrik imzanız (TouchID / FaceID / Ekran Kilidi) ile eşleştirmeniz gerekmektedir.
+      </p>
+      <button id="btnPairDevice" class="btn-large btn-primary" style="font-size: 1rem;">Bu Telefonu Eşleştir</button>
+    </div>
+
+    <!-- 3. MESAİ PANELİ -->
+    <div id="dashboardSection" style="display:none;">
+      <div class="card">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 1rem;">
+          <div>
+            <h2 id="userNameLabel" style="font-size: 1.1rem;">Hoş geldiniz</h2>
+            <p id="userSubLabel" style="font-size: 0.8rem; color: var(--text-muted);"></p>
+          </div>
+          <button id="btnLogout" style="background:none; border:none; color:var(--danger); cursor:pointer; font-size:0.85rem; font-weight:600;">Çıkış</button>
+        </div>
+
+        <div class="attendance-box">
+          <div class="time-slot">
+            <label>Giriş</label>
+            <span id="checkInDisplay">--:--</span>
+          </div>
+          <div class="time-slot">
+            <label>Çıkış</label>
+            <span id="checkOutDisplay">--:--</span>
+          </div>
+        </div>
+
+        <button id="btnCheckIn" class="btn-large btn-success" style="display:none;">İŞE BAŞLA</button>
+        <button id="btnCheckOut" class="btn-large btn-danger" style="display:none;">MESAİYİ BİTİR</button>
+        
+        <p id="completedNotice" style="display:none; text-align:center; font-weight:600; color:var(--success); margin-top:1rem;">
+          Bugünkü mesainiz başarıyla tamamlanmıştır.
+        </p>
+
+        <p id="geoStatus" style="font-size: 0.75rem; color: var(--text-muted); text-align: center; margin-top: 1rem;">
+          Konum ve biyometrik kontrol sadece işlem anında sorgulanır.
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <script src="/js/app.js" type="module"></script>
+</body>
+</html>

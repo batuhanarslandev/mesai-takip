@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mesai Yönetim Paneli</title>
+  <link rel="stylesheet" href="/css/style.css">
+  <style>
+    .admin-container { max-width: 1100px; margin: 0 auto; }
+    .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 1rem; margin-bottom: 1.5rem; }
+    .stat-card { background: #fff; padding: 1rem; border-radius: 8px; border: 1px solid var(--border); text-align: center; }
+    .stat-card h3 { font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.3rem; }
+    .stat-card p { font-size: 1.5rem; font-weight: bold; color: var(--primary); }
+    table { width: 100%; border-collapse: collapse; margin-top: 1rem; font-size: 0.9rem; }
+    th, td { padding: 0.75rem; text-align: left; border-bottom: 1px solid var(--border); }
+    th { background: #fafafa; }
+    .btn-sm { padding: 0.4rem 0.8rem; font-size: 0.8rem; border-radius: 4px; cursor: pointer; border: none; }
+  </style>
+</head>
+<body>
+  <div class="admin-container">
+    <header style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 1.5rem;">
+      <h1>Puantaj ve Güvenlik Denetim Masası</h1>
+      <a href="/" style="font-size:0.9rem; text-decoration:none; color:var(--primary);">Personel Ekranına Dön</a>
+    </header>
+
+    <div class="stats-grid">
+      <div class="stat-card"><h3>Toplam Personel</h3><p id="statTotal">-</p></div>
+      <div class="stat-card"><h3>Gelen</h3><p id="statPresent" style="color:var(--success);">-</p></div>
+      <div class="stat-card"><h3>Gelmeyen</h3><p id="statAbsent" style="color:var(--danger);">-</p></div>
+      <div class="stat-card"><h3>Geç Kalan</h3><p id="statLate" style="color:var(--warning);">-</p></div>
+      <div class="stat-card"><h3>Çıkış Yapan</h3><p id="statOut">-</p></div>
+      <div class="stat-card"><h3>Eksik Çıkış</h3><p id="statMissingOut" style="color:var(--danger);">-</p></div>
+      <div class="stat-card"><h3>Güvenlik İhlali</h3><p id="statSecurity" style="color:var(--danger);">-</p></div>
+    </div>
+
+    <!-- PUANTAJ LİSTESİ -->
+    <div class="card">
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <h2>Günlük Puantaj Çizelgesi</h2>
+        <div>
+          <input type="date" id="filterDate" class="form-control" style="width:auto; display:inline-block;">
+          <button id="btnExportCSV" class="btn-sm btn-primary">CSV Dışa Aktar</button>
+        </div>
+      </div>
+
+      <table id="puantajTable">
+        <thead>
+          <tr>
+            <th>Sicil No</th>
+            <th>Ad Soyad</th>
+            <th>Birim</th>
+            <th>Giriş Saati</th>
+            <th>Çıkış Saati</th>
+            <th>Durum</th>
+            <th>Yöntem</th>
+            <th>İşlem</th>
+          </tr>
+        </thead>
+        <tbody>
+          <!-- Dinamik doldurulur -->
+        </tbody>
+      </table>
+    </div>
+
+    <!-- GEOFENCE & ÇALIŞMA SAATİ AYARLARI -->
+    <div class="card">
+      <h2>Sistem Parametreleri (Geofence & Mesai)</h2>
+      <form id="settingsForm" style="display:grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; margin-top: 1rem;">
+        <div class="form-group">
+          <label>Merkez Enlem (Lat)</label>
+          <input type="text" id="setLat" class="form-control" required>
+        </div>
+        <div class="form-group">
+          <label>Merkez Boylam (Lon)</label>
+          <input type="text" id="setLon" class="form-control" required>
+        </div>
+        <div class="form-group">
+          <label>İzin Verilen Yarıçap (Metre)</label>
+          <input type="number" id="setRadius" class="form-control" required>
+        </div>
+        <div class="form-group">
+          <label>Mesai Başlangıç</label>
+          <input type="time" id="setStart" class="form-control" required>
+        </div>
+        <div class="form-group">
+          <label>Tolerans (Dakika)</label>
+          <input type="number" id="setTolerance" class="form-control" required>
+        </div>
+        <div class="form-group">
+          <label>Maksimum GPS Sapması (m)</label>
+          <input type="number" id="setMaxAcc" class="form-control" required>
+        </div>
+        <div style="grid-column: span 3;">
+          <button type="submit" class="btn-sm btn-success" style="padding:0.6rem 1.2rem;">Ayarları Kaydet</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script src="/js/admin.js"></script>
+</body>
+</html>

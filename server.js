@@ -18,6 +18,13 @@ import { createSession, getSession, destroySession, logSecurityEvent } from './a
 dotenv.config();
 initDatabase();
 
+// credentials tablosunda device_fingerprint sütunu yoksa dinamik olarak ekle
+try {
+  db.exec('ALTER TABLE credentials ADD COLUMN device_fingerprint TEXT;');
+} catch (_) {
+  // Sütun zaten mevcutsa hatayı yut
+}
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = Fastify({ 
   logger: true,
@@ -120,7 +127,7 @@ app.get('/api/auth/me', async (req, reply) => {
 });
 
 // ----------------------------------------------------
-// WEBAUTHN / CİHAZ EŞLEŞTİRME
+// WEBAUTHN / CİHAZ EŞLEŞTİRME (DONANIM KİLİDİ DAHİL)
 // ----------------------------------------------------
 app.get('/api/webauthn/register-options', async (req, reply) => {
   try {
@@ -162,13 +169,40 @@ app.post('/api/webauthn/register-verify', async (req, reply) => {
     const session = authGuard(req, reply);
     if (!session) return;
 
+    const { device_fingerprint, ...attestationResponse } = req.body;
+    const ip = req.ip;
+    const ua = req.headers['user-agent'];
+
+    if (!device_fingerprint) {
+      return reply.status(400).send({ error: 'Cihaz donanım kimliği doğrulanamadı.' });
+    }
+
+    // 1. KRİTİK KONTROL: Bu fiziksel cihaz başka bir personele zaten zimmetli mi?
+    const existingBinding = db.prepare(`
+      SELECT c.id, u.employee_no, u.first_name, u.last_name 
+      FROM credentials c
+      JOIN users u ON c.user_id = u.id
+      WHERE c.device_fingerprint = ? AND c.user_id != ? AND c.is_active = 1
+    `).get(device_fingerprint, session.userId);
+
+    if (existingBinding) {
+      logSecurityEvent(session.userId, 'device_sharing_attempt', ip, ua, {
+        registered_to: existingBinding.employee_no,
+        registered_name: `${existingBinding.first_name} ${existingBinding.last_name}`,
+        fingerprint: device_fingerprint
+      });
+      return reply.status(403).send({ 
+        error: `GÜVENLİK İHLALİ: Bu telefon zaten [${existingBinding.employee_no} - ${existingBinding.first_name} ${existingBinding.last_name}] personeline zimmetlidir. Başka personel adına eşleştirilemez!` 
+      });
+    }
+
     const expectedChallenge = webauthnChallenges.get(session.userId);
     webauthnChallenges.delete(session.userId);
 
     const { rpID, expectedOrigin } = getWebAuthnConfig(req);
 
     const verification = await verifyRegistrationResponse({
-      response: req.body,
+      response: attestationResponse,
       expectedChallenge,
       expectedOrigin: expectedOrigin,
       expectedRPID: rpID
@@ -191,22 +225,24 @@ app.post('/api/webauthn/register-verify', async (req, reply) => {
       ? credentialPublicKey
       : Buffer.from(credentialPublicKey).toString('base64url');
 
-    const clientTransports = req.body.response?.transports || [];
+    const clientTransports = attestationResponse.response?.transports || [];
     const finalTransports = clientTransports.length > 0 ? clientTransports : ['internal'];
 
+    // Donanım parmak izi ile birlikte kaydet
     db.prepare(`
-      INSERT INTO credentials (user_id, credential_id, public_key, counter, transports, device_name)
-      VALUES (?, ?, ?, ?, ?, ?)
+      INSERT INTO credentials (user_id, credential_id, public_key, counter, transports, device_name, device_fingerprint)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
     `).run(
       session.userId,
       credIdBase64,
       pubKeyBase64,
       counter,
       JSON.stringify(finalTransports),
-      req.headers['user-agent'] || 'Bilinmeyen Cihaz'
+      req.headers['user-agent'] || 'Bilinmeyen Cihaz',
+      device_fingerprint
     );
 
-    return { success: true, message: 'Cihaz başarıyla eşleştirildi.' };
+    return { success: true, message: 'Cihaz bu personele başarıyla zimmetlendi.' };
   } catch (err) {
     req.log.error(err);
     return reply.status(500).send({ error: `Cihaz onay hatası: ${err.message}` });
@@ -252,19 +288,35 @@ app.get('/api/webauthn/assertion-options', async (req, reply) => {
 });
 
 // ----------------------------------------------------
-// MESAİ İŞLEMLERİ (GEOFENCE & WEBAUTHN ATOMİK KONTROL)
+// MESAİ İŞLEMLERİ (GEOFENCE & WEBAUTHN & DONANIM DENETİMİ)
 // ----------------------------------------------------
 app.post('/api/attendance/check-in', async (req, reply) => {
   try {
     const session = authGuard(req, reply);
     if (!session) return;
 
-    const { assertion, coords } = req.body;
+    const { assertion, coords, device_fingerprint } = req.body;
     const ip = req.ip;
     const ua = req.headers['user-agent'];
 
     if (!coords || typeof coords.latitude !== 'number' || typeof coords.longitude !== 'number') {
       return reply.status(400).send({ error: 'Konum verisi alınamadı.' });
+    }
+
+    const cred = db.prepare('SELECT * FROM credentials WHERE user_id = ? AND is_active = 1').get(session.userId);
+    if (!cred) {
+      return reply.status(400).send({ error: 'Yetkilendirilmiş donanım cihazı bulunamadı.' });
+    }
+
+    // DONANIM DENETİMİ: Başka bir cihazdan veya yetkisiz tarayıcıdan deneme kontrolü
+    if (cred.device_fingerprint && device_fingerprint && cred.device_fingerprint !== device_fingerprint) {
+      logSecurityEvent(session.userId, 'unauthorized_device_attempt', ip, ua, {
+        saved_fp: cred.device_fingerprint,
+        attempted_fp: device_fingerprint
+      });
+      return reply.status(403).send({ 
+        error: 'GÜVENLİK İHLALİ: İşlem yapılan cihaz, sisteme kayıtlı olan fiziksel telefonunuz ile uyuşmuyor!' 
+      });
     }
 
     const settingsRows = db.prepare('SELECT key, value FROM settings').all();
@@ -292,11 +344,6 @@ app.post('/api/attendance/check-in', async (req, reply) => {
 
     const expectedChallenge = webauthnChallenges.get(session.userId);
     webauthnChallenges.delete(session.userId);
-
-    const cred = db.prepare('SELECT * FROM credentials WHERE user_id = ? AND is_active = 1').get(session.userId);
-    if (!cred) {
-      return reply.status(400).send({ error: 'Yetkilendirilmiş donanım cihazı bulunamadı.' });
-    }
 
     const { rpID, expectedOrigin } = getWebAuthnConfig(req);
 
@@ -366,12 +413,29 @@ app.post('/api/attendance/check-out', async (req, reply) => {
     const session = authGuard(req, reply);
     if (!session) return;
 
-    const { assertion, coords } = req.body;
+    const { assertion, coords, device_fingerprint } = req.body;
     const ip = req.ip;
     const ua = req.headers['user-agent'];
 
     if (!coords || typeof coords.latitude !== 'number' || typeof coords.longitude !== 'number') {
       return reply.status(400).send({ error: 'Konum bilgisi eksik.' });
+    }
+
+    const cred = db.prepare('SELECT * FROM credentials WHERE user_id = ? AND is_active = 1').get(session.userId);
+    if (!cred) {
+      return reply.status(400).send({ error: 'Yetkilendirilmiş donanım cihazı bulunamadı.' });
+    }
+
+    // DONANIM DENETİMİ: Çıkış anında cihaz doğrulaması
+    if (cred.device_fingerprint && device_fingerprint && cred.device_fingerprint !== device_fingerprint) {
+      logSecurityEvent(session.userId, 'unauthorized_device_attempt', ip, ua, {
+        action: 'check-out',
+        saved_fp: cred.device_fingerprint,
+        attempted_fp: device_fingerprint
+      });
+      return reply.status(403).send({ 
+        error: 'GÜVENLİK İHLALİ: Çıkış yapılan cihaz, sisteme kayıtlı olan fiziksel telefonunuz ile uyuşmuyor!' 
+      });
     }
 
     const settingsRows = db.prepare('SELECT key, value FROM settings').all();
@@ -404,7 +468,6 @@ app.post('/api/attendance/check-out', async (req, reply) => {
     const expectedChallenge = webauthnChallenges.get(session.userId);
     webauthnChallenges.delete(session.userId);
 
-    const cred = db.prepare('SELECT * FROM credentials WHERE user_id = ? AND is_active = 1').get(session.userId);
     const { rpID, expectedOrigin } = getWebAuthnConfig(req);
 
     const verification = await verifyAuthenticationResponse({
@@ -478,8 +541,6 @@ app.post('/api/terminal/check-in', async (req, reply) => {
 // ----------------------------------------------------
 // YÖNETİM (ADMIN) ENDPOINT'LERİ
 // ----------------------------------------------------
-
-// 1. Personel Listesi
 app.get('/api/admin/employees', async (req, reply) => {
   const session = authGuard(req, reply, ['admin']);
   if (!session) return;
@@ -496,7 +557,6 @@ app.get('/api/admin/employees', async (req, reply) => {
   return employees;
 });
 
-// 2. Tekil Personel Ekleme
 app.post('/api/admin/add-employee', async (req, reply) => {
   const session = authGuard(req, reply, ['admin']);
   if (!session) return;
@@ -522,7 +582,6 @@ app.post('/api/admin/add-employee', async (req, reply) => {
   return { success: true, message: `${first_name} ${last_name} başarıyla sisteme eklendi.` };
 });
 
-// 3. Toplu Personel İçe Aktarma (120 kişi için Array kabul eder)
 app.post('/api/admin/import-employees', async (req, reply) => {
   const session = authGuard(req, reply, ['admin']);
   if (!session) return;
@@ -687,15 +746,26 @@ app.post('/api/admin/settings', async (req, reply) => {
   return { success: true, message: 'Sistem parametreleri güncellendi.' };
 });
 
+// Güvenlik Günlüğü (İsteğe bağlı ?type=device filtresi destekler)
 app.get('/api/admin/security-logs', async (req, reply) => {
   const session = authGuard(req, reply, ['admin']);
   if (!session) return;
-  return db.prepare(`
+
+  const filterType = req.query.type;
+  let query = `
     SELECT s.*, u.employee_no, u.first_name, u.last_name
     FROM security_logs s
     LEFT JOIN users u ON s.user_id = u.id
-    ORDER BY s.created_at DESC LIMIT 100
-  `).all();
+  `;
+  const params = [];
+
+  if (filterType === 'device') {
+    query += ` WHERE s.event_type IN ('device_sharing_attempt', 'unauthorized_device_attempt') `;
+  }
+
+  query += ` ORDER BY s.created_at DESC LIMIT 100 `;
+
+  return db.prepare(query).all(...params);
 });
 
 // Sunucu Başlatma

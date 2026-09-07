@@ -1,3 +1,65 @@
+// Donanım Tabanlı Parmak İzi (Hardware + WebGL + Canvas Fingerprinting)
+async function generateHardwareFingerprint() {
+  const components = [];
+
+  // 1. Ekran ve Donanım Özellikleri
+  components.push(screen.width + 'x' + screen.height + 'x' + screen.colorDepth);
+  components.push(window.devicePixelRatio || 1);
+  components.push(navigator.hardwareConcurrency || 'unknown');
+  components.push(navigator.language || '');
+  components.push(Intl.DateTimeFormat().resolvedOptions().timeZone || '');
+
+  // 2. WebGL / GPU Renderer Kimliği
+  try {
+    const canvasGl = document.createElement('canvas');
+    const gl = canvasGl.getContext('webgl') || canvasGl.getContext('experimental-webgl');
+    if (gl) {
+      const debugInfo = gl.getExtension('WEBGL_debug_renderer_info');
+      if (debugInfo) {
+        components.push(gl.getParameter(debugInfo.UNMASKED_VENDOR_WEBGL));
+        components.push(gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL));
+      }
+    }
+  } catch (_) {}
+
+  // 3. 2D Canvas Çizim İmzası (GPU ve font işleme farkı)
+  try {
+    const canvas2d = document.createElement('canvas');
+    canvas2d.width = 240;
+    canvas2d.height = 60;
+    const ctx = canvas2d.getContext('2d');
+    if (ctx) {
+      ctx.textBaseline = 'top';
+      ctx.font = '14px "Arial", "Helvetica", sans-serif';
+      ctx.textBaseline = 'alphabetic';
+      ctx.fillStyle = '#f60';
+      ctx.fillRect(125, 1, 62, 20);
+      ctx.fillStyle = '#069';
+      ctx.fillText('KurumMesaiSecurity#120', 2, 15);
+      ctx.fillStyle = 'rgba(102, 204, 0, 0.7)';
+      ctx.fillText('KurumMesaiSecurity#120', 4, 17);
+      components.push(canvas2d.toDataURL());
+    }
+  } catch (_) {}
+
+  // 4. Bileşenleri Birleştir ve SHA-256 Hash Al
+  const rawString = components.join('###');
+  const msgBuffer = new TextEncoder().encode(rawString);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+
+  return 'hwfp_' + hashHex;
+}
+// Cihaz Kimliği Üretici / Alıcı
+function getOrCreateDeviceId() {
+  let id = localStorage.getItem('kurum_device_uuid');
+  if (!id) {
+    id = 'dev_' + crypto.randomUUID();
+    localStorage.setItem('kurum_device_uuid', id);
+  }
+  return id;
+}
 const { startRegistration, startAuthentication } = SimpleWebAuthnBrowser;
 
 const UI = {
@@ -147,10 +209,17 @@ document.getElementById('btnPairDevice').addEventListener('click', async () => {
     // Kütüphane tarayıcı ve OS ile tüm Base64 ve donanım görüşmesini otomatik yapar
     const attResp = await startRegistration({ optionsJSON: options });
 
+    // app.js içindeki btnPairDevice fetch satırı:
+    // btnPairDevice click olayı içinde:
+    const hwFingerprint = await generateHardwareFingerprint();
+
     const verifyRes = await fetch('/api/webauthn/register-verify', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(attResp)
+      body: JSON.stringify({
+        ...attResp,
+        device_fingerprint: hwFingerprint // Donanımsal parmak izi
+      })
     });
     const verifyData = await verifyRes.json();
     if (!verifyRes.ok) throw new Error(verifyData.error);
@@ -181,11 +250,15 @@ async function executeShiftAction(endpoint) {
 
     const asseResp = await startAuthentication({ optionsJSON: options });
 
+    // executeShiftAction fonksiyonu içinde, actionRes fetch çağrısı:
+    const hwFingerprint = await generateHardwareFingerprint();
+
     const actionRes = await fetch(endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         assertion: asseResp,
+        device_fingerprint: hwFingerprint, // Her mesai hareketinde kontrol
         coords: {
           latitude: coords.latitude,
           longitude: coords.longitude,

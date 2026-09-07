@@ -77,7 +77,7 @@ app.post('/api/auth/login', async (req, reply) => {
     path: '/',
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production' || req.protocol === 'https',
-    sameSite: 'lax', // 'strict' bazen harici linkten ilk tıklamada cookie'yi engelleyebilir, 'lax' mobilde daha kararlıdır
+    sameSite: 'lax',
     maxAge: 43200
   });
 
@@ -478,6 +478,89 @@ app.post('/api/terminal/check-in', async (req, reply) => {
 // ----------------------------------------------------
 // YÖNETİM (ADMIN) ENDPOINT'LERİ
 // ----------------------------------------------------
+
+// 1. Personel Listesi
+app.get('/api/admin/employees', async (req, reply) => {
+  const session = authGuard(req, reply, ['admin']);
+  if (!session) return;
+
+  const employees = db.prepare(`
+    SELECT u.id, u.employee_no, u.first_name, u.last_name, u.department, u.role, u.is_active,
+           c.id as has_device, c.last_used_at as device_last_used
+    FROM users u
+    LEFT JOIN credentials c ON u.id = c.user_id AND c.is_active = 1
+    WHERE u.role = 'employee'
+    ORDER BY u.employee_no ASC
+  `).all();
+
+  return employees;
+});
+
+// 2. Tekil Personel Ekleme
+app.post('/api/admin/add-employee', async (req, reply) => {
+  const session = authGuard(req, reply, ['admin']);
+  if (!session) return;
+
+  const { employee_no, first_name, last_name, password, department } = req.body;
+
+  if (!employee_no || !first_name || !last_name || !password) {
+    return reply.status(400).send({ error: 'Sicil no, ad, soyad ve şifre zorunludur.' });
+  }
+
+  const existing = db.prepare('SELECT id FROM users WHERE employee_no = ?').get(employee_no);
+  if (existing) {
+    return reply.status(400).send({ error: `${employee_no} sicil numaralı personel zaten sistemde kayıtlı.` });
+  }
+
+  const passwordHash = hashPassword(password);
+
+  db.prepare(`
+    INSERT INTO users (employee_no, first_name, last_name, password_hash, role, department, is_active)
+    VALUES (?, ?, ?, ?, 'employee', ?, 1)
+  `).run(employee_no, first_name, last_name, passwordHash, department || 'Genel');
+
+  return { success: true, message: `${first_name} ${last_name} başarıyla sisteme eklendi.` };
+});
+
+// 3. Toplu Personel İçe Aktarma (120 kişi için Array kabul eder)
+app.post('/api/admin/import-employees', async (req, reply) => {
+  const session = authGuard(req, reply, ['admin']);
+  if (!session) return;
+
+  const { employees } = req.body;
+  if (!Array.isArray(employees) || employees.length === 0) {
+    return reply.status(400).send({ error: 'Geçerli bir personel listesi gönderilmedi.' });
+  }
+
+  const insertStmt = db.prepare(`
+    INSERT INTO users (employee_no, first_name, last_name, password_hash, role, department, is_active)
+    VALUES (?, ?, ?, ?, 'employee', ?, 1)
+    ON CONFLICT(employee_no) DO UPDATE SET
+      first_name = excluded.first_name,
+      last_name = excluded.last_name,
+      department = excluded.department
+  `);
+
+  let count = 0;
+  const insertMany = db.transaction((list) => {
+    for (const emp of list) {
+      if (emp.no && emp.name && emp.surname) {
+        const hashed = hashPassword(emp.pass || '123456');
+        insertStmt.run(String(emp.no), emp.name, emp.surname, hashed, emp.dept || 'Genel');
+        count++;
+      }
+    }
+  });
+
+  try {
+    insertMany(employees);
+    return { success: true, message: `${count} adet personel başarıyla yüklendi/güncellendi.` };
+  } catch (err) {
+    req.log.error(err);
+    return reply.status(500).send({ error: `Toplu aktarım hatası: ${err.message}` });
+  }
+});
+
 app.get('/api/admin/dashboard', async (req, reply) => {
   const session = authGuard(req, reply, ['admin']);
   if (!session) return;
@@ -615,7 +698,8 @@ app.get('/api/admin/security-logs', async (req, reply) => {
   `).all();
 });
 
-app.listen({ port: PORT, host: '0.0.0.0' }, (err, address) => {
+// Sunucu Başlatma
+app.listen({ port: Number(PORT), host: '0.0.0.0' }, (err, address) => {
   if (err) {
     console.error(err);
     process.exit(1);

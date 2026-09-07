@@ -37,7 +37,15 @@
       <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1.5rem;">
         Mesai kaydı yapabilmek için bu cep telefonunu biyometrik imzanız (TouchID / FaceID / Ekran Kilidi) ile eşleştirmeniz gerekmektedir.
       </p>
-      <button id="btnPairDevice" class="btn-large btn-primary" style="font-size: 1rem;">Bu Telefonu Eşleştir</button>
+      <div id="devicePairSection" style="display: none; text-align: center; margin-top: 1rem;">
+  <button id="btnPairDevice" class="btn btn-primary" style="width: 100%; margin-bottom: 0.75rem;">
+    Bu Telefonu Eşleştir
+  </button>
+  
+  <button id="btnAbortSession" type="button" class="btn" style="width: 100%; background: #fee2e2; color: #dc2626; border: 1px solid #fecaca; font-weight: 600; padding: 0.6rem; border-radius: 6px; cursor: pointer;">
+    Farklı Hesapla Giriş Yap (Çıkış)
+  </button>
+</div>
     </div>
 
     <!-- 3. MESAİ PANELİ -->

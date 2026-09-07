@@ -62,7 +62,7 @@ function authGuard(req, reply, allowedRoles = ['employee', 'admin']) {
     reply.status(401).send({ error: 'Yetkisiz erişim. Oturum açmalısınız.' });
     return null;
   }
-  return session;
+  return { ...session, sessionId };
 }
 
 // ----------------------------------------------------
@@ -191,6 +191,11 @@ app.post('/api/webauthn/register-verify', async (req, reply) => {
         registered_name: `${existingBinding.first_name} ${existingBinding.last_name}`,
         fingerprint: device_fingerprint
       });
+
+      // GÜNCELLEME: Oturumu sıfırla ki kullanıcı yanlış hesapta takılı kalmasın
+      if (session.sessionId) destroySession(session.sessionId);
+      reply.clearCookie('session_id', { path: '/' });
+
       return reply.status(403).send({ 
         error: `GÜVENLİK İHLALİ: Bu telefon zaten [${existingBinding.employee_no} - ${existingBinding.first_name} ${existingBinding.last_name}] personeline zimmetlidir. Başka personel adına eşleştirilemez!` 
       });
@@ -757,7 +762,6 @@ app.get('/api/admin/security-logs', async (req, reply) => {
     FROM security_logs s
     LEFT JOIN users u ON s.user_id = u.id
   `;
-  const params = [];
 
   if (filterType === 'device') {
     query += ` WHERE s.event_type IN ('device_sharing_attempt', 'unauthorized_device_attempt') `;
@@ -765,7 +769,7 @@ app.get('/api/admin/security-logs', async (req, reply) => {
 
   query += ` ORDER BY s.created_at DESC LIMIT 100 `;
 
-  return db.prepare(query).all(...params);
+  return db.prepare(query).all();
 });
 
 // Sunucu Başlatma

@@ -51,15 +51,7 @@ async function generateHardwareFingerprint() {
 
   return 'hwfp_' + hashHex;
 }
-// Cihaz Kimliği Üretici / Alıcı
-function getOrCreateDeviceId() {
-  let id = localStorage.getItem('kurum_device_uuid');
-  if (!id) {
-    id = 'dev_' + crypto.randomUUID();
-    localStorage.setItem('kurum_device_uuid', id);
-  }
-  return id;
-}
+
 const { startRegistration, startAuthentication } = SimpleWebAuthnBrowser;
 
 const UI = {
@@ -94,6 +86,20 @@ async function getPreciseLocation() {
 }
 
 let currentUser = null;
+
+// Yanlış hesapta kilitlenmeyi önleyen çıkış fonksiyonu
+async function handleForceLogout() {
+  try {
+    await fetch('/api/auth/logout', { method: 'POST' });
+  } catch (_) {}
+  window.location.reload();
+}
+
+// Kurtarma / Çıkış butonunu dinle
+const btnAbort = document.getElementById('btnAbortSession');
+if (btnAbort) {
+  btnAbort.addEventListener('click', handleForceLogout);
+}
 
 async function checkSession() {
   try {
@@ -206,11 +212,7 @@ document.getElementById('btnPairDevice').addEventListener('click', async () => {
     const options = await optRes.json();
     if (!optRes.ok) throw new Error(options.error);
 
-    // Kütüphane tarayıcı ve OS ile tüm Base64 ve donanım görüşmesini otomatik yapar
     const attResp = await startRegistration({ optionsJSON: options });
-
-    // app.js içindeki btnPairDevice fetch satırı:
-    // btnPairDevice click olayı içinde:
     const hwFingerprint = await generateHardwareFingerprint();
 
     const verifyRes = await fetch('/api/webauthn/register-verify', {
@@ -218,16 +220,26 @@ document.getElementById('btnPairDevice').addEventListener('click', async () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         ...attResp,
-        device_fingerprint: hwFingerprint // Donanımsal parmak izi
+        device_fingerprint: hwFingerprint
       })
     });
+
     const verifyData = await verifyRes.json();
-    if (!verifyRes.ok) throw new Error(verifyData.error);
+
+    if (!verifyRes.ok) {
+      if (verifyRes.status === 403) {
+        UI.alert(verifyData.error || 'Güvenlik ihlali! Oturum kapatılıyor...', true);
+        setTimeout(() => {
+          handleForceLogout();
+        }, 2500);
+        return;
+      }
+      throw new Error(verifyData.error);
+    }
 
     UI.alert('Cihaz başarıyla eşleştirildi!', false);
     checkSession();
   } catch (err) {
-    // Kullanıcı iptal ettiyse veya donanım hatası
     UI.alert(err.message || 'Cihaz doğrulaması tamamlanamadı.');
   }
 });
@@ -249,8 +261,6 @@ async function executeShiftAction(endpoint) {
     if (!optRes.ok) throw new Error(options.error);
 
     const asseResp = await startAuthentication({ optionsJSON: options });
-
-    // executeShiftAction fonksiyonu içinde, actionRes fetch çağrısı:
     const hwFingerprint = await generateHardwareFingerprint();
 
     const actionRes = await fetch(endpoint, {
@@ -258,7 +268,7 @@ async function executeShiftAction(endpoint) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         assertion: asseResp,
-        device_fingerprint: hwFingerprint, // Her mesai hareketinde kontrol
+        device_fingerprint: hwFingerprint,
         coords: {
           latitude: coords.latitude,
           longitude: coords.longitude,

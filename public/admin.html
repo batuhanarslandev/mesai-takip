@@ -3,101 +3,535 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Mesai Yönetim Paneli</title>
-  <link rel="stylesheet" href="/css/style.css">
+  <title>Yönetim & Denetim Portali | Mesai Takip</title>
   <style>
-    .admin-container { max-width: 1100px; margin: 0 auto; }
-    .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 1rem; margin-bottom: 1.5rem; }
-    .stat-card { background: #fff; padding: 1rem; border-radius: 8px; border: 1px solid var(--border); text-align: center; }
-    .stat-card h3 { font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.3rem; }
-    .stat-card p { font-size: 1.5rem; font-weight: bold; color: var(--primary); }
-    table { width: 100%; border-collapse: collapse; margin-top: 1rem; font-size: 0.9rem; }
-    th, td { padding: 0.75rem; text-align: left; border-bottom: 1px solid var(--border); }
-    th { background: #fafafa; }
-    .btn-sm { padding: 0.4rem 0.8rem; font-size: 0.8rem; border-radius: 4px; cursor: pointer; border: none; }
+    :root {
+      --primary: #1e3a8a;
+      --primary-hover: #172554;
+      --bg: #f8fafc;
+      --card-bg: #ffffff;
+      --border: #e2e8f0;
+      --text-main: #0f172a;
+      --text-muted: #64748b;
+      --success: #16a34a;
+      --danger: #dc2626;
+      --warning: #ca8a04;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    body { background-color: var(--bg); color: var(--text-main); min-height: 100vh; display: flex; flex-direction: column; }
+    
+    header { background: #fff; border-bottom: 1px solid var(--border); padding: 1rem 2rem; display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0; z-index: 20; }
+    .header-title h1 { font-size: 1.25rem; font-weight: 700; color: var(--primary); }
+    .header-title p { font-size: 0.85rem; color: var(--text-muted); }
+    .btn-logout { background: #fee2e2; color: var(--danger); border: 1px solid #fecaca; padding: 0.5rem 1rem; border-radius: 6px; cursor: pointer; font-weight: 600; }
+    .btn-logout:hover { background: #fca5a5; }
+
+    .nav-tabs { display: flex; gap: 0.5rem; background: #fff; border-bottom: 1px solid var(--border); padding: 0.5rem 2rem; overflow-x: auto; }
+    .tab-btn { background: none; border: none; padding: 0.6rem 1.2rem; font-weight: 600; color: var(--text-muted); border-radius: 6px; cursor: pointer; font-size: 0.95rem; }
+    .tab-btn.active { background: #eff6ff; color: var(--primary); }
+
+    main { padding: 2rem; flex: 1; max-width: 1400px; margin: 0 auto; width: 100%; }
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
+
+    /* Kartlar & Grid */
+    .grid-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 1.5rem; }
+    .stat-card { background: #fff; padding: 1.25rem; border-radius: 8px; border: 1px solid var(--border); box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
+    .stat-card h3 { font-size: 0.85rem; color: var(--text-muted); text-transform: uppercase; font-weight: 600; }
+    .stat-card p { font-size: 1.75rem; font-weight: 700; color: var(--text-main); margin-top: 0.5rem; }
+
+    .card { background: #fff; border-radius: 8px; border: 1px solid var(--border); padding: 1.5rem; margin-bottom: 1.5rem; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
+    .card h2 { font-size: 1.1rem; margin-bottom: 1rem; color: var(--primary); }
+
+    /* Form Elemanları */
+    .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; }
+    .form-group { display: flex; flex-direction: column; gap: 0.4rem; }
+    .form-group label { font-size: 0.85rem; font-weight: 600; color: var(--text-muted); }
+    .form-group input, .form-group textarea, .form-group select { padding: 0.6rem; border: 1px solid var(--border); border-radius: 6px; font-size: 0.95rem; }
+    .btn-primary { background: var(--primary); color: #fff; border: none; padding: 0.65rem 1.25rem; border-radius: 6px; font-weight: 600; cursor: pointer; }
+    .btn-primary:hover { background: var(--primary-hover); }
+
+    /* Tablolar */
+    .table-container { overflow-x: auto; margin-top: 1rem; }
+    table { width: 100%; border-collapse: collapse; text-align: left; font-size: 0.9rem; }
+    th { background: #f1f5f9; padding: 0.75rem 1rem; font-weight: 600; color: var(--text-muted); border-bottom: 2px solid var(--border); }
+    td { padding: 0.75rem 1rem; border-bottom: 1px solid var(--border); vertical-align: middle; }
+    tr:hover { background-color: #f8fafc; }
+
+    /* Rozetler */
+    .badge { display: inline-block; padding: 0.25rem 0.5rem; border-radius: 9999px; font-size: 0.75rem; font-weight: 600; }
+    .badge-success { background: #dcfce7; color: var(--success); }
+    .badge-danger { background: #fee2e2; color: var(--danger); }
+    .badge-warning { background: #fef9c3; color: var(--warning); }
+    .badge-gray { background: #e2e8f0; color: var(--text-muted); }
+
+    .btn-action { padding: 0.35rem 0.65rem; border-radius: 4px; font-size: 0.8rem; font-weight: 600; cursor: pointer; border: 1px solid transparent; }
+    .btn-reset-device { background: #fff1f2; color: var(--danger); border-color: #fecdd3; }
+    .btn-reset-device:hover { background: #ffe4e6; }
+
+    .alert { padding: 0.75rem 1rem; border-radius: 6px; font-size: 0.9rem; margin-bottom: 1rem; display: none; }
+    .alert-success { background: #dcfce7; color: #15803d; border: 1px solid #bbf7d0; }
+    .alert-error { background: #fee2e2; color: #b91c1c; border: 1px solid #fecaca; }
   </style>
 </head>
 <body>
-  <div class="admin-container">
-    <header style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 1.5rem;">
-      <h1>Puantaj ve Güvenlik Denetim Masası</h1>
-      <a href="/" style="font-size:0.9rem; text-decoration:none; color:var(--primary);">Personel Ekranına Dön</a>
-    </header>
 
-    <div class="stats-grid">
-      <div class="stat-card"><h3>Toplam Personel</h3><p id="statTotal">-</p></div>
-      <div class="stat-card"><h3>Gelen</h3><p id="statPresent" style="color:var(--success);">-</p></div>
-      <div class="stat-card"><h3>Gelmeyen</h3><p id="statAbsent" style="color:var(--danger);">-</p></div>
-      <div class="stat-card"><h3>Geç Kalan</h3><p id="statLate" style="color:var(--warning);">-</p></div>
-      <div class="stat-card"><h3>Çıkış Yapan</h3><p id="statOut">-</p></div>
-      <div class="stat-card"><h3>Eksik Çıkış</h3><p id="statMissingOut" style="color:var(--danger);">-</p></div>
-      <div class="stat-card"><h3>Güvenlik İhlali</h3><p id="statSecurity" style="color:var(--danger);">-</p></div>
+  <header>
+    <div class="header-title">
+      <h1>Kurum Mesai Takip ve Puantaj Portali</h1>
+      <p>Yüklenici Firma Personel Denetim ve Biyometrik Doğrulama</p>
     </div>
+    <button class="btn-logout" id="btnLogout">Çıkış Yap</button>
+  </header>
 
-    <!-- PUANTAJ LİSTESİ -->
-    <div class="card">
-      <div style="display:flex; justify-content:space-between; align-items:center;">
-        <h2>Günlük Puantaj Çizelgesi</h2>
-        <div>
-          <input type="date" id="filterDate" class="form-control" style="width:auto; display:inline-block;">
-          <button id="btnExportCSV" class="btn-sm btn-primary">CSV Dışa Aktar</button>
+  <nav class="nav-tabs">
+    <button class="tab-btn active" data-tab="tabDashboard">Özet Gösterge</button>
+    <button class="tab-btn" data-tab="tabEmployees">Personel Yönetimi</button>
+    <button class="tab-btn" data-tab="tabPuantaj">Günlük Puantaj</button>
+    <button class="tab-btn" data-tab="tabSettings">Sistem & Geofence</button>
+    <button class="tab-btn" data-tab="tabLogs">Güvenlik Günlüğü</button>
+  </nav>
+
+  <main>
+    <div id="alertBox" class="alert"></div>
+
+    <!-- 1. SEKME: DASHBOARD -->
+    <section id="tabDashboard" class="tab-content active">
+      <div class="grid-stats">
+        <div class="stat-card">
+          <h3>Aktif Personel</h3>
+          <p id="statTotalEmployees">--</p>
+        </div>
+        <div class="stat-card">
+          <h3>Bugün Gelen</h3>
+          <p id="statPresent" style="color: var(--success);">--</p>
+        </div>
+        <div class="stat-card">
+          <h3>Geç Kalan</h3>
+          <p id="statLate" style="color: var(--warning);">--</p>
+        </div>
+        <div class="stat-card">
+          <h3>Gelmeyen</h3>
+          <p id="statAbsent" style="color: var(--danger);">--</p>
+        </div>
+        <div class="stat-card">
+          <h3>Güvenlik İhlali</h3>
+          <p id="statViolations">--</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- 2. SEKME: PERSONEL YÖNETİMİ -->
+    <section id="tabEmployees" class="tab-content">
+      <!-- Tekil Personel Ekleme -->
+      <div class="card">
+        <h2>Yeni Personel Tanımla</h2>
+        <form id="formAddEmployee">
+          <div class="form-grid">
+            <div class="form-group">
+              <label>Sicil / Personel No *</label>
+              <input type="text" id="empNo" placeholder="Örn: 1045" required />
+            </div>
+            <div class="form-group">
+              <label>Adı *</label>
+              <input type="text" id="empFirstName" placeholder="Örn: Mehmet" required />
+            </div>
+            <div class="form-group">
+              <label>Soyadı *</label>
+              <input type="text" id="empLastName" placeholder="Örn: Demir" required />
+            </div>
+            <div class="form-group">
+              <label>Çalıştığı Birim / Departman</label>
+              <input type="text" id="empDept" placeholder="Örn: Yemekhane / Servis" />
+            </div>
+            <div class="form-group">
+              <label>İlk Giriş Şifresi *</label>
+              <input type="password" id="empPass" value="123456" required />
+            </div>
+          </div>
+          <div style="margin-top: 1rem;">
+            <button type="submit" class="btn-primary">Personeli Kaydet</button>
+          </div>
+        </form>
+      </div>
+
+      <!-- Toplu İçe Aktarma -->
+      <div class="card">
+        <h2>Toplu Personel İçe Aktarma (JSON Formatında)</h2>
+        <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.5rem;">
+          Excel sütunlarınızı JSON dizisi olarak buraya yapıştırabilirsiniz. (Örn: <code>[{"no":"1001","name":"Ali","surname":"Kaya","dept":"Mutfak"}]</code>)
+        </p>
+        <textarea id="jsonImportInput" rows="4" style="width: 100%; padding: 0.5rem; font-family: monospace; border: 1px solid var(--border); border-radius: 6px;" placeholder='[ {"no": "1001", "name": "Ahmet", "surname": "Yılmaz", "dept": "Mutfak", "pass": "123456"} ]'></textarea>
+        <div style="margin-top: 0.5rem;">
+          <button id="btnBulkImport" class="btn-primary" style="background: #0f766e;">Toplu Aktarımı Başlat</button>
         </div>
       </div>
 
-      <table id="puantajTable">
-        <thead>
+      <!-- Personel Listesi -->
+      <div class="card">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <h2>Kayıtlı Personel Listesi</h2>
+          <span id="employeeCountBadge" class="badge badge-gray">Yükleniyor...</span>
+        </div>
+        <div class="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th>Sicil No</th>
+                <th>Ad Soyad</th>
+                <th>Birim</th>
+                <th>Cihaz Durumu</th>
+                <th>Son Eşleşme</th>
+                <th>İşlem</th>
+              </tr>
+            </thead>
+            <tbody id="employeeTableBody">
+              <tr><td colspan="6" style="text-align: center;">Yükleniyor...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- 3. SEKME: GÜNLÜK PUANTAJ -->
+    <section id="tabPuantaj" class="tab-content">
+      <div class="card">
+        <div style="display: flex; gap: 1rem; align-items: flex-end; margin-bottom: 1rem;">
+          <div class="form-group" style="width: 200px;">
+            <label>Tarih Seçin</label>
+            <input type="date" id="puantajDate" />
+          </div>
+          <button id="btnRefreshPuantaj" class="btn-primary">Listele</button>
+        </div>
+
+        <div class="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th>Sicil</th>
+                <th>Personel</th>
+                <th>Birim</th>
+                <th>Giriş Saati</th>
+                <th>Çıkış Saati</th>
+                <th>Mesafe</th>
+                <th>Durum</th>
+                <th>Yöntem</th>
+              </tr>
+            </thead>
+            <tbody id="puantajTableBody">
+              <tr><td colspan="8" style="text-align:center;">Tarih seçip 'Listele'ye basınız.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- 4. SEKME: SİSTEM AYARLARI -->
+    <section id="tabSettings" class="tab-content">
+      <div class="card">
+        <h2>Çalışma Alanı (Geofence) ve Mesai Ayarları</h2>
+        <form id="formSettings">
+          <div class="form-grid">
+            <div class="form-group">
+              <label>Merkez Enlem (Latitude)</label>
+              <input type="text" id="settingLat" />
+            </div>
+            <div class="form-group">
+              <label>Merkez Boylam (Longitude)</label>
+              <input type="text" id="settingLon" />
+            </div>
+            <div class="form-group">
+              <label>İzin Verilen Yarıçap (Metre)</label>
+              <input type="number" id="settingRadius" />
+            </div>
+            <div class="form-group">
+              <label>Mesai Başlangıç Saati</label>
+              <input type="time" id="settingStartTime" />
+            </div>
+            <div class="form-group">
+              <label>Gecikme Toleransı (Dakika)</label>
+              <input type="number" id="settingLateTolerance" />
+            </div>
+          </div>
+          <div style="margin-top: 1rem;">
+            <button type="submit" class="btn-primary">Ayarları Kaydet</button>
+          </div>
+        </form>
+      </div>
+    </section>
+
+    <!-- 5. SEKME: GÜVENLİK GÜNLÜĞÜ -->
+    <section id="tabLogs" class="tab-content">
+      <div class="card">
+        <h2>Sistem Güvenlik ve İhlal Kayıtları (Son 100 İşlem)</h2>
+        <div class="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th>Zaman</th>
+                <th>Sicil</th>
+                <th>Olay Tipi</th>
+                <th>IP Adresi</th>
+                <th>Ayrıntı</th>
+              </tr>
+            </thead>
+            <tbody id="logsTableBody">
+              <tr><td colspan="5" style="text-align:center;">Kayıtlar yükleniyor...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const UI = {
+      alert: (msg, isError = true) => {
+        const el = document.getElementById('alertBox');
+        el.className = `alert ${isError ? 'alert-error' : 'alert-success'}`;
+        el.innerText = msg;
+        el.style.display = 'block';
+        setTimeout(() => { el.style.display = 'none'; }, 4000);
+      }
+    };
+
+    // Sekme Geçişleri
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+        btn.classList.add('active');
+        document.getElementById(btn.dataset.tab).classList.add('active');
+
+        // Sekme tetiklemeleri
+        if (btn.dataset.tab === 'tabEmployees') loadEmployees();
+        if (btn.dataset.tab === 'tabPuantaj') loadPuantaj();
+        if (btn.dataset.tab === 'tabSettings') loadSettings();
+        if (btn.dataset.tab === 'tabLogs') loadLogs();
+      });
+    });
+
+    // 1. Dashboard Yükle
+    async function loadDashboard() {
+      try {
+        const res = await fetch('/api/admin/dashboard');
+        if (!res.ok) { window.location.href = '/'; return; }
+        const d = await res.json();
+        document.getElementById('statTotalEmployees').innerText = d.totalEmployees;
+        document.getElementById('statPresent').innerText = d.presentCount;
+        document.getElementById('statLate').innerText = d.lateCount;
+        document.getElementById('statAbsent').innerText = d.absentCount;
+        document.getElementById('statViolations').innerText = d.securityViolations;
+      } catch (err) {
+        UI.alert('Özet veriler yüklenirken hata oluştu.');
+      }
+    }
+
+    // 2. Personel Listesi Yükle
+    async function loadEmployees() {
+      try {
+        const res = await fetch('/api/admin/employees');
+        const list = await res.json();
+        document.getElementById('employeeCountBadge').innerText = `${list.length} Personel`;
+        
+        const tbody = document.getElementById('employeeTableBody');
+        if (list.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;">Henüz kayıtlı personel bulunmuyor.</td></tr>';
+          return;
+        }
+
+        tbody.innerHTML = list.map(emp => `
           <tr>
-            <th>Sicil No</th>
-            <th>Ad Soyad</th>
-            <th>Birim</th>
-            <th>Giriş Saati</th>
-            <th>Çıkış Saati</th>
-            <th>Durum</th>
-            <th>Yöntem</th>
-            <th>İşlem</th>
+            <td><strong>${emp.employee_no}</strong></td>
+            <td>${emp.first_name} ${emp.last_name}</td>
+            <td>${emp.department || '-'}</td>
+            <td>
+              ${emp.has_device 
+                ? '<span class="badge badge-success">Cihaz Eşleşti</span>' 
+                : '<span class="badge badge-warning">Cihaz Bekliyor</span>'}
+            </td>
+            <td>${emp.device_last_used ? new Date(emp.device_last_used).toLocaleDateString('tr-TR') : '-'}</td>
+            <td>
+              ${emp.has_device 
+                ? `<button class="btn-action btn-reset-device" onclick="resetDevice(${emp.id}, '${emp.employee_no}')">Cihazı Sıfırla</button>`
+                : '-'}
+            </td>
           </tr>
-        </thead>
-        <tbody>
-          <!-- Dinamik doldurulur -->
-        </tbody>
-      </table>
-    </div>
+        `).join('');
+      } catch (err) {
+        UI.alert('Personel listesi yüklenemedi.');
+      }
+    }
 
-    <!-- GEOFENCE & ÇALIŞMA SAATİ AYARLARI -->
-    <div class="card">
-      <h2>Sistem Parametreleri (Geofence & Mesai)</h2>
-      <form id="settingsForm" style="display:grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; margin-top: 1rem;">
-        <div class="form-group">
-          <label>Merkez Enlem (Lat)</label>
-          <input type="text" id="setLat" class="form-control" required>
-        </div>
-        <div class="form-group">
-          <label>Merkez Boylam (Lon)</label>
-          <input type="text" id="setLon" class="form-control" required>
-        </div>
-        <div class="form-group">
-          <label>İzin Verilen Yarıçap (Metre)</label>
-          <input type="number" id="setRadius" class="form-control" required>
-        </div>
-        <div class="form-group">
-          <label>Mesai Başlangıç</label>
-          <input type="time" id="setStart" class="form-control" required>
-        </div>
-        <div class="form-group">
-          <label>Tolerans (Dakika)</label>
-          <input type="number" id="setTolerance" class="form-control" required>
-        </div>
-        <div class="form-group">
-          <label>Maksimum GPS Sapması (m)</label>
-          <input type="number" id="setMaxAcc" class="form-control" required>
-        </div>
-        <div style="grid-column: span 3;">
-          <button type="submit" class="btn-sm btn-success" style="padding:0.6rem 1.2rem;">Ayarları Kaydet</button>
-        </div>
-      </form>
-    </div>
-  </div>
+    // Tekil Personel Ekleme
+    document.getElementById('formAddEmployee').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const body = {
+        employee_no: document.getElementById('empNo').value.trim(),
+        first_name: document.getElementById('empFirstName').value.trim(),
+        last_name: document.getElementById('empLastName').value.trim(),
+        department: document.getElementById('empDept').value.trim(),
+        password: document.getElementById('empPass').value
+      };
 
-  <script src="/js/admin.js"></script>
+      try {
+        const res = await fetch('/api/admin/add-employee', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body)
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error);
+
+        UI.alert(data.message, false);
+        e.target.reset();
+        document.getElementById('empPass').value = '123456';
+        loadEmployees();
+      } catch (err) {
+        UI.alert(err.message);
+      }
+    });
+
+    // Toplu Personel İçe Aktarma
+    document.getElementById('btnBulkImport').addEventListener('click', async () => {
+      const raw = document.getElementById('jsonImportInput').value.trim();
+      if (!raw) return UI.alert('Lütfen JSON verisi giriniz.');
+
+      try {
+        const employees = JSON.parse(raw);
+        const res = await fetch('/api/admin/import-employees', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ employees })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error);
+
+        UI.alert(data.message, false);
+        document.getElementById('jsonImportInput').value = '';
+        loadEmployees();
+      } catch (err) {
+        UI.alert('Geçersiz format veya aktarım hatası: ' + err.message);
+      }
+    });
+
+    // Cihaz Sıfırlama
+    window.resetDevice = async (userId, empNo) => {
+      const reason = prompt(`${empNo} sicilli personelin cihaz kilidini sıfırlama gerekçesi (Örn: Telefonunu değiştirdi):`);
+      if (!reason) return;
+
+      try {
+        const res = await fetch('/api/admin/reset-device', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ user_id: userId, reason })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error);
+        UI.alert(data.message, false);
+        loadEmployees();
+      } catch (err) {
+        UI.alert(err.message);
+      }
+    };
+
+    // 3. Puantaj Yükle
+    async function loadPuantaj() {
+      const date = document.getElementById('puantajDate').value || new Date().toISOString().slice(0, 10);
+      document.getElementById('puantajDate').value = date;
+
+      try {
+        const res = await fetch(`/api/admin/puantaj?date=${date}`);
+        const data = await res.json();
+        const tbody = document.getElementById('puantajTableBody');
+
+        tbody.innerHTML = data.map(r => `
+          <tr>
+            <td>${r.employee_no}</td>
+            <td><strong>${r.first_name} ${r.last_name}</strong></td>
+            <td>${r.department || '-'}</td>
+            <td>${r.check_in_time ? new Date(r.check_in_time).toLocaleTimeString('tr-TR', {hour:'2-digit', minute:'2-digit'}) : '--:--'}</td>
+            <td>${r.check_out_time ? new Date(r.check_out_time).toLocaleTimeString('tr-TR', {hour:'2-digit', minute:'2-digit'}) : '--:--'}</td>
+            <td>${r.check_in_distance ? Math.round(r.check_in_distance) + 'm' : '-'}</td>
+            <td>
+              <span class="badge ${r.status === 'normal' ? 'badge-success' : (r.status === 'late' ? 'badge-warning' : 'badge-gray')}">
+                ${r.status || 'Giriş Yok'}
+              </span>
+            </td>
+            <td>${r.verification_mode || '-'}</td>
+          </tr>
+        `).join('');
+      } catch (err) {
+        UI.alert('Puantaj yüklenemedi.');
+      }
+    }
+    document.getElementById('btnRefreshPuantaj').addEventListener('click', loadPuantaj);
+
+    // 4. Ayarları Yükle / Kaydet
+    async function loadSettings() {
+      try {
+        const res = await fetch('/api/admin/settings');
+        const s = await res.json();
+        document.getElementById('settingLat').value = s.center_lat || '';
+        document.getElementById('settingLon').value = s.center_lon || '';
+        document.getElementById('settingRadius').value = s.geofence_radius || '';
+        document.getElementById('settingStartTime').value = s.work_start_time || '';
+        document.getElementById('settingLateTolerance').value = s.late_tolerance_minutes || '';
+      } catch (err) {
+        UI.alert('Ayarlar yüklenemedi.');
+      }
+    }
+
+    document.getElementById('formSettings').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const body = {
+        center_lat: document.getElementById('settingLat').value,
+        center_lon: document.getElementById('settingLon').value,
+        geofence_radius: document.getElementById('settingRadius').value,
+        work_start_time: document.getElementById('settingStartTime').value,
+        late_tolerance_minutes: document.getElementById('settingLateTolerance').value
+      };
+      try {
+        const res = await fetch('/api/admin/settings', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body)
+        });
+        const data = await res.json();
+        UI.alert(data.message, false);
+      } catch (err) {
+        UI.alert('Ayarlar güncellenemedi.');
+      }
+    });
+
+    // 5. Güvenlik Günlüğü
+    async function loadLogs() {
+      try {
+        const res = await fetch('/api/admin/security-logs');
+        const logs = await res.json();
+        const tbody = document.getElementById('logsTableBody');
+        tbody.innerHTML = logs.map(l => `
+          <tr>
+            <td>${new Date(l.created_at).toLocaleString('tr-TR')}</td>
+            <td>${l.employee_no || 'Bilinmiyor'}</td>
+            <td><span class="badge badge-danger">${l.event_type}</span></td>
+            <td><code>${l.ip_address || '-'}</code></td>
+            <td>${l.details || '-'}</td>
+          </tr>
+        `).join('');
+      } catch (err) {
+        UI.alert('Güvenlik logları alınamadı.');
+      }
+    }
+
+    // Çıkış Yap
+    document.getElementById('btnLogout').addEventListener('click', async () => {
+      await fetch('/api/auth/logout', { method: 'POST' });
+      window.location.href = '/';
+    });
+
+    // Başlangıç
+    loadDashboard();
+  </script>
 </body>
 </html>

@@ -142,7 +142,24 @@ function renderState(data) {
   document.getElementById('dashboardSection').style.display = 'block';
 
   document.getElementById('userNameLabel').innerText = `Hoş geldiniz, ${data.user.first_name}`;
-  document.getElementById('userSubLabel').innerText = `${data.user.employee_no} • ${data.user.department}`;
+  document.getElementById('userSubLabel').innerText = `${data.user.employee_no} • ${data.user.department || 'Genel'}`;
+
+  // Vardiya Rozeti (Artık renderState içinde güvenle çalışır)
+  const shiftBadge = document.getElementById('userShiftBadge');
+  if (data.today_shift && shiftBadge) {
+    shiftBadge.style.display = 'inline-block';
+    if (data.today_shift.shift_type === 'OFF') {
+      shiftBadge.innerText = 'Bugün Haftalık İzinlisiniz (OFF)';
+      shiftBadge.style.background = '#f1f5f9';
+      shiftBadge.style.color = '#64748b';
+    } else {
+      shiftBadge.innerText = `Bugünkü Vardiya: ${data.today_shift.shift_type} (${data.today_shift.start_time || '--:--'} - ${data.today_shift.end_time || '--:--'})`;
+      shiftBadge.style.background = '#e0f2fe';
+      shiftBadge.style.color = '#0284c7';
+    }
+  } else if (shiftBadge) {
+    shiftBadge.style.display = 'none';
+  }
 
   const att = data.today_attendance;
   const btnIn = document.getElementById('btnCheckIn');
@@ -176,7 +193,7 @@ function renderState(data) {
   }
 }
 
-// 1. Giriş Formu
+// 1. Giriş Formu (Donanım Parmak İzi ile birlikte gönderilir)
 document.getElementById('loginForm').addEventListener('submit', async (e) => {
   e.preventDefault();
   UI.clearAlert();
@@ -184,15 +201,20 @@ document.getElementById('loginForm').addEventListener('submit', async (e) => {
   const password = document.getElementById('password').value;
 
   try {
+    const hwFingerprint = await generateHardwareFingerprint();
+
     const res = await fetch('/api/auth/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ employee_no, password })
+      body: JSON.stringify({ 
+        employee_no, 
+        password,
+        device_fingerprint: hwFingerprint
+      })
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error);
 
-    // Giriş yapan admin ise doğrudan admin paneline gönder
     if (data.user && data.user.role === 'admin') {
       window.location.href = '/admin.html';
       return;
@@ -204,7 +226,7 @@ document.getElementById('loginForm').addEventListener('submit', async (e) => {
   }
 });
 
-// 2. WebAuthn Cihaz Eşleştirme (startRegistration ile Kesin Platform Zorunluluğu)
+// 2. WebAuthn Cihaz Eşleştirme
 document.getElementById('btnPairDevice').addEventListener('click', async () => {
   UI.clearAlert();
   try {
@@ -278,7 +300,16 @@ async function executeShiftAction(endpoint) {
     });
 
     const actionData = await actionRes.json();
-    if (!actionRes.ok) throw new Error(actionData.error);
+    if (!actionRes.ok) {
+      if (actionRes.status === 403) {
+        UI.alert(actionData.error || 'Güvenlik ihlali! Oturum kapatılıyor...', true);
+        setTimeout(() => {
+          handleForceLogout();
+        }, 2500);
+        return;
+      }
+      throw new Error(actionData.error);
+    }
 
     UI.alert(actionData.message, false);
     checkSession();

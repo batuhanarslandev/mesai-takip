@@ -16,6 +16,7 @@
       --success: #16a34a;
       --danger: #dc2626;
       --warning: #ca8a04;
+      --info: #0284c7;
     }
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
     body { background-color: var(--bg); color: var(--text-main); min-height: 100vh; display: flex; flex-direction: column; }
@@ -27,7 +28,7 @@
     .btn-logout:hover { background: #fca5a5; }
 
     .nav-tabs { display: flex; gap: 0.5rem; background: #fff; border-bottom: 1px solid var(--border); padding: 0.5rem 2rem; overflow-x: auto; }
-    .tab-btn { background: none; border: none; padding: 0.6rem 1.2rem; font-weight: 600; color: var(--text-muted); border-radius: 6px; cursor: pointer; font-size: 0.95rem; }
+    .tab-btn { background: none; border: none; padding: 0.6rem 1.2rem; font-weight: 600; color: var(--text-muted); border-radius: 6px; cursor: pointer; font-size: 0.95rem; white-space: nowrap; }
     .tab-btn.active { background: #eff6ff; color: var(--primary); }
 
     main { padding: 2rem; flex: 1; max-width: 1400px; margin: 0 auto; width: 100%; }
@@ -35,7 +36,7 @@
     .tab-content.active { display: block; }
 
     /* Kartlar & Grid */
-    .grid-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 1.5rem; }
+    .grid-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1rem; margin-bottom: 1.5rem; }
     .stat-card { background: #fff; padding: 1.25rem; border-radius: 8px; border: 1px solid var(--border); box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
     .stat-card h3 { font-size: 0.85rem; color: var(--text-muted); text-transform: uppercase; font-weight: 600; }
     .stat-card p { font-size: 1.75rem; font-weight: 700; color: var(--text-main); margin-top: 0.5rem; }
@@ -47,7 +48,7 @@
     .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; }
     .form-group { display: flex; flex-direction: column; gap: 0.4rem; }
     .form-group label { font-size: 0.85rem; font-weight: 600; color: var(--text-muted); }
-    .form-group input, .form-group textarea, .form-group select { padding: 0.6rem; border: 1px solid var(--border); border-radius: 6px; font-size: 0.95rem; }
+    .form-group input, .form-group textarea, .form-group select { padding: 0.6rem; border: 1px solid var(--border); border-radius: 6px; font-size: 0.95rem; background: #fff; }
     .btn-primary { background: var(--primary); color: #fff; border: none; padding: 0.65rem 1.25rem; border-radius: 6px; font-weight: 600; cursor: pointer; }
     .btn-primary:hover { background: var(--primary-hover); }
 
@@ -63,16 +64,21 @@
     .badge-success { background: #dcfce7; color: var(--success); }
     .badge-danger { background: #fee2e2; color: var(--danger); }
     .badge-warning { background: #fef9c3; color: var(--warning); }
+    .badge-info { background: #e0f2fe; color: var(--info); }
     .badge-gray { background: #e2e8f0; color: var(--text-muted); }
 
     .btn-action { padding: 0.35rem 0.65rem; border-radius: 4px; font-size: 0.8rem; font-weight: 600; cursor: pointer; border: 1px solid transparent; }
     .btn-reset-device { background: #fff1f2; color: var(--danger); border-color: #fecdd3; }
     .btn-reset-device:hover { background: #ffe4e6; }
+    .btn-delete-leave { background: #fee2e2; color: var(--danger); border-color: #fca5a5; }
+    .btn-delete-leave:hover { background: #f87171; color: #fff; }
 
     .alert { padding: 0.75rem 1rem; border-radius: 6px; font-size: 0.9rem; margin-bottom: 1rem; display: none; }
     .alert-success { background: #dcfce7; color: #15803d; border: 1px solid #bbf7d0; }
     .alert-error { background: #fee2e2; color: #b91c1c; border: 1px solid #fecaca; }
   </style>
+  <!-- Tarayıcıda Excel (.xlsx) çözümleme kütüphanesi -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 </head>
 <body>
 
@@ -87,9 +93,11 @@
   <nav class="nav-tabs">
     <button class="tab-btn active" data-tab="tabDashboard">Özet Gösterge</button>
     <button class="tab-btn" data-tab="tabEmployees">Personel Yönetimi</button>
+    <button class="tab-btn" data-tab="tabLeaves">İzin Yönetimi</button>
     <button class="tab-btn" data-tab="tabPuantaj">Günlük Puantaj</button>
     <button class="tab-btn" data-tab="tabSettings">Sistem & Geofence</button>
     <button class="tab-btn" data-tab="tabLogs">Güvenlik Günlüğü</button>
+	<button class="tab-btn" data-tab="tabShifts">Vardiya Planı</button>
   </nav>
 
   <main>
@@ -105,6 +113,10 @@
         <div class="stat-card">
           <h3>Bugün Gelen</h3>
           <p id="statPresent" style="color: var(--success);">--</p>
+        </div>
+        <div class="stat-card">
+          <h3>İzinli / Raporlu</h3>
+          <p id="statOnLeave" style="color: var(--info);">--</p>
         </div>
         <div class="stat-card">
           <h3>Geç Kalan</h3>
@@ -123,14 +135,26 @@
 
     <!-- 2. SEKME: PERSONEL YÖNETİMİ -->
     <section id="tabEmployees" class="tab-content">
+      <!-- Excel ile Toplu Personel Yükleme -->
+      <div class="card" style="border-left: 4px solid #0f766e;">
+        <h2>Excel ile Toplu Personel Yükleme (.xlsx)</h2>
+        <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.75rem;">
+          Excel sütun başlıklarınız <strong>Sicil No | Ad | Soyad | Bölüm | Şifre</strong> şeklinde olmalıdır. Şifre belirtilmezse varsayılan <code>123456</code> atanır.
+        </p>
+        <div style="display: flex; gap: 1rem; align-items: center; flex-wrap: wrap;">
+          <input type="file" id="empExcelFile" accept=".xlsx, .xls" style="padding: 0.4rem; border: 1px solid var(--border); border-radius: 6px;" />
+          <button id="btnUploadEmployeesExcel" class="btn-primary" style="background: #0f766e;">Excel Dosyasını Yükle</button>
+        </div>
+      </div>
+
       <!-- Tekil Personel Ekleme -->
       <div class="card">
-        <h2>Yeni Personel Tanımla</h2>
+        <h2>Yeni Tekil Personel Tanımla</h2>
         <form id="formAddEmployee">
           <div class="form-grid">
             <div class="form-group">
               <label>Sicil / Personel No *</label>
-              <input type="text" id="empNo" placeholder="Örn: 1045" required />
+              <input type="text" id="empNo" placeholder="Örn: P1045" required />
             </div>
             <div class="form-group">
               <label>Adı *</label>
@@ -142,7 +166,7 @@
             </div>
             <div class="form-group">
               <label>Çalıştığı Birim / Departman</label>
-              <input type="text" id="empDept" placeholder="Örn: Yemekhane / Servis" />
+              <input type="text" id="empDept" placeholder="Örn: Yemekhane / Mutfak" />
             </div>
             <div class="form-group">
               <label>İlk Giriş Şifresi *</label>
@@ -153,18 +177,6 @@
             <button type="submit" class="btn-primary">Personeli Kaydet</button>
           </div>
         </form>
-      </div>
-
-      <!-- Toplu İçe Aktarma -->
-      <div class="card">
-        <h2>Toplu Personel İçe Aktarma (JSON Formatında)</h2>
-        <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.5rem;">
-          Excel sütunlarınızı JSON dizisi olarak buraya yapıştırabilirsiniz. (Örn: <code>[{"no":"1001","name":"Ali","surname":"Kaya","dept":"Mutfak"}]</code>)
-        </p>
-        <textarea id="jsonImportInput" rows="4" style="width: 100%; padding: 0.5rem; font-family: monospace; border: 1px solid var(--border); border-radius: 6px;" placeholder='[ {"no": "1001", "name": "Ahmet", "surname": "Yılmaz", "dept": "Mutfak", "pass": "123456"} ]'></textarea>
-        <div style="margin-top: 0.5rem;">
-          <button id="btnBulkImport" class="btn-primary" style="background: #0f766e;">Toplu Aktarımı Başlat</button>
-        </div>
       </div>
 
       <!-- Personel Listesi -->
@@ -192,8 +204,115 @@
         </div>
       </div>
     </section>
+<!-- YENİ SEKME: VARDİYA YÖNETİMİ -->
+<section id="tabShifts" class="tab-content">
+  <!-- Excel Yükleme Kartı -->
+  <div class="card" style="border-left: 4px solid var(--primary);">
+    <h2>Haftalık Vardiya Listesi Yükle (.xlsx)</h2>
+    <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.75rem;">
+      Excel sütun başlıkları: <strong>Sicil No | Tarih (YYYY-AA-GG) | Vardiya (SABAH / AKSAM / OFF)</strong>
+    </p>
+    <div style="display: flex; gap: 1rem; align-items: center; flex-wrap: wrap;">
+      <input type="file" id="shiftExcelFile" accept=".xlsx, .xls" style="padding: 0.4rem; border: 1px solid var(--border); border-radius: 6px;" />
+      <button id="btnUploadShiftsExcel" class="btn-primary">Vardiyaları Sisteme İşle</button>
+    </div>
+  </div>
 
-    <!-- 3. SEKME: GÜNLÜK PUANTAJ -->
+  <!-- Günlük Vardiya Tablosu -->
+  <div class="card">
+    <div style="display: flex; gap: 1rem; align-items: flex-end; margin-bottom: 1rem;">
+      <div class="form-group" style="width: 200px;">
+        <label>Tarih Seçin</label>
+        <input type="date" id="shiftViewDate" />
+      </div>
+      <button id="btnRefreshShifts" class="btn-primary">Vardiyaları Göster</button>
+    </div>
+
+    <div class="table-container">
+      <table>
+        <thead>
+          <tr>
+            <th>Sicil</th>
+            <th>Personel</th>
+            <th>Birim</th>
+            <th>Vardiya Tipi</th>
+            <th>Başlangıç</th>
+            <th>Bitiş</th>
+          </tr>
+        </thead>
+        <tbody id="shiftsTableBody">
+          <tr><td colspan="6" style="text-align:center;">Tarih seçip 'Vardiyaları Göster'e basınız.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+    <!-- 3. SEKME: İZİN YÖNETİMİ -->
+    <section id="tabLeaves" class="tab-content">
+      <div class="card">
+        <h2>Yeni İzin Tanımla</h2>
+        <form id="formAddLeave">
+          <div class="form-grid">
+            <div class="form-group">
+              <label>Personel Seçin *</label>
+              <select id="leaveUserSelect" required>
+                <option value="">Personel yükleniyor...</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>İzin Türü *</label>
+              <select id="leaveType" required>
+                <option value="Yıllık İzin">Yıllık İzin</option>
+                <option value="Rapor / Sevk">Rapor / Sevk</option>
+                <option value="İdari İzin">İdari İzin</option>
+                <option value="Ücretsiz İzin">Ücretsiz İzin</option>
+                <option value="Haftalık İzin (OFF)">Haftalık İzin (OFF)</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Başlangıç Tarihi *</label>
+              <input type="date" id="leaveStart" required />
+            </div>
+            <div class="form-group">
+              <label>Bitiş Tarihi *</label>
+              <input type="date" id="leaveEnd" required />
+            </div>
+            <div class="form-group" style="grid-column: 1 / -1;">
+              <label>Açıklama / Not</label>
+              <input type="text" id="leaveDesc" placeholder="Örn: Ameliyat raporu, idari izin onayı vb." />
+            </div>
+          </div>
+          <div style="margin-top: 1rem;">
+            <button type="submit" class="btn-primary">İzni Kaydet</button>
+          </div>
+        </form>
+      </div>
+
+      <div class="card">
+        <h2>Kayıtlı İzinler Listesi</h2>
+        <div class="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th>Sicil</th>
+                <th>Personel</th>
+                <th>Birim</th>
+                <th>İzin Türü</th>
+                <th>Başlangıç</th>
+                <th>Bitiş</th>
+                <th>Açıklama</th>
+                <th>İşlem</th>
+              </tr>
+            </thead>
+            <tbody id="leavesTableBody">
+              <tr><td colspan="8" style="text-align: center;">Yükleniyor...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- 4. SEKME: GÜNLÜK PUANTAJ -->
     <section id="tabPuantaj" class="tab-content">
       <div class="card">
         <div style="display: flex; gap: 1rem; align-items: flex-end; margin-bottom: 1rem;">
@@ -215,7 +334,7 @@
                 <th>Çıkış Saati</th>
                 <th>Mesafe</th>
                 <th>Durum</th>
-                <th>Yöntem</th>
+                <th>Açıklama</th>
               </tr>
             </thead>
             <tbody id="puantajTableBody">
@@ -226,7 +345,7 @@
       </div>
     </section>
 
-    <!-- 4. SEKME: SİSTEM AYARLARI -->
+    <!-- 5. SEKME: SİSTEM AYARLARI -->
     <section id="tabSettings" class="tab-content">
       <div class="card">
         <h2>Çalışma Alanı (Geofence) ve Mesai Ayarları</h2>
@@ -260,7 +379,7 @@
       </div>
     </section>
 
-    <!-- 5. SEKME: GÜVENLİK GÜNLÜĞÜ -->
+    <!-- 6. SEKME: GÜVENLİK GÜNLÜĞÜ -->
     <section id="tabLogs" class="tab-content">
       <div class="card">
         <h2>Sistem Güvenlik ve İhlal Kayıtları (Son 100 İşlem)</h2>
@@ -303,8 +422,9 @@
         btn.classList.add('active');
         document.getElementById(btn.dataset.tab).classList.add('active');
 
-        // Sekme tetiklemeleri
+        if (btn.dataset.tab === 'tabDashboard') loadDashboard();
         if (btn.dataset.tab === 'tabEmployees') loadEmployees();
+        if (btn.dataset.tab === 'tabLeaves') loadLeavesTab();
         if (btn.dataset.tab === 'tabPuantaj') loadPuantaj();
         if (btn.dataset.tab === 'tabSettings') loadSettings();
         if (btn.dataset.tab === 'tabLogs') loadLogs();
@@ -319,6 +439,7 @@
         const d = await res.json();
         document.getElementById('statTotalEmployees').innerText = d.totalEmployees;
         document.getElementById('statPresent').innerText = d.presentCount;
+        document.getElementById('statOnLeave').innerText = d.onLeaveCount || 0;
         document.getElementById('statLate').innerText = d.lateCount;
         document.getElementById('statAbsent').innerText = d.absentCount;
         document.getElementById('statViolations').innerText = d.securityViolations;
@@ -328,10 +449,12 @@
     }
 
     // 2. Personel Listesi Yükle
+    let globalEmployeeList = [];
     async function loadEmployees() {
       try {
         const res = await fetch('/api/admin/employees');
         const list = await res.json();
+        globalEmployeeList = list;
         document.getElementById('employeeCountBadge').innerText = `${list.length} Personel`;
         
         const tbody = document.getElementById('employeeTableBody');
@@ -392,32 +515,44 @@
       }
     });
 
-    // Toplu Personel İçe Aktarma
-    document.getElementById('btnBulkImport').addEventListener('click', async () => {
-      const raw = document.getElementById('jsonImportInput').value.trim();
-      if (!raw) return UI.alert('Lütfen JSON verisi giriniz.');
-
-      try {
-        const employees = JSON.parse(raw);
-        const res = await fetch('/api/admin/import-employees', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ employees })
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error);
-
-        UI.alert(data.message, false);
-        document.getElementById('jsonImportInput').value = '';
-        loadEmployees();
-      } catch (err) {
-        UI.alert('Geçersiz format veya aktarım hatası: ' + err.message);
+    // Excel ile Toplu Personel Yükleme
+    document.getElementById('btnUploadEmployeesExcel').addEventListener('click', () => {
+      const fileInput = document.getElementById('empExcelFile');
+      if (!fileInput.files.length) {
+        return UI.alert('Lütfen bir Excel (.xlsx) dosyası seçin.');
       }
+
+      const reader = new FileReader();
+      reader.onload = async (e) => {
+        try {
+          const data = new Uint8Array(e.target.result);
+          const workbook = XLSX.read(data, { type: 'array' });
+          const sheet = workbook.Sheets[workbook.SheetNames[0]];
+          const rows = XLSX.utils.sheet_to_json(sheet);
+
+          if (!rows.length) throw new Error('Seçilen Excel sayfası boş görünüyor.');
+
+          const res = await fetch('/api/admin/bulk-import-employees', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ employees: rows })
+          });
+          const result = await res.json();
+          if (!res.ok) throw new Error(result.error);
+
+          UI.alert(result.message, false);
+          fileInput.value = '';
+          loadEmployees();
+        } catch (err) {
+          UI.alert('Excel yükleme hatası: ' + err.message);
+        }
+      };
+      reader.readAsArrayBuffer(fileInput.files[0]);
     });
 
     // Cihaz Sıfırlama
     window.resetDevice = async (userId, empNo) => {
-      const reason = prompt(`${empNo} sicilli personelin cihaz kilidini sıfırlama gerekçesi (Örn: Telefonunu değiştirdi):`);
+      const reason = prompt(`${empNo} sicilli personelin cihaz kilidini sıfırlama gerekçesi:`);
       if (!reason) return;
 
       try {
@@ -435,7 +570,88 @@
       }
     };
 
-    // 3. Puantaj Yükle
+    // 3. İzin Yönetimi Yükle
+    async function loadLeavesTab() {
+      // Personel dropdown doldur
+      try {
+        const empRes = await fetch('/api/admin/employees');
+        const employees = await empRes.json();
+        const sel = document.getElementById('leaveUserSelect');
+        sel.innerHTML = '<option value="">Personel Seçin</option>' + employees.map(emp => 
+          `<option value="${emp.id}">${emp.employee_no} - ${emp.first_name} ${emp.last_name} (${emp.department || 'Genel'})</option>`
+        ).join('');
+
+        // İzin Listesini getir
+        const leavesRes = await fetch('/api/admin/leaves');
+        const leaves = await leavesRes.json();
+        const tbody = document.getElementById('leavesTableBody');
+
+        if (!leaves.length) {
+          tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;">Kayıtlı aktif izin bulunmuyor.</td></tr>';
+          return;
+        }
+
+        tbody.innerHTML = leaves.map(l => `
+          <tr>
+            <td><strong>${l.employee_no}</strong></td>
+            <td>${l.first_name} ${l.last_name}</td>
+            <td>${l.department || '-'}</td>
+            <td><span class="badge badge-info">${l.leave_type}</span></td>
+            <td>${l.start_date}</td>
+            <td>${l.end_date}</td>
+            <td>${l.description || '-'}</td>
+            <td>
+              <button class="btn-action btn-delete-leave" onclick="deleteLeave(${l.id})">Sil</button>
+            </td>
+          </tr>
+        `).join('');
+      } catch (err) {
+        UI.alert('İzin kayıtları yüklenemedi.');
+      }
+    }
+
+    // İzin Kaydetme Formu
+    document.getElementById('formAddLeave').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const body = {
+        user_id: document.getElementById('leaveUserSelect').value,
+        leave_type: document.getElementById('leaveType').value,
+        start_date: document.getElementById('leaveStart').value,
+        end_date: document.getElementById('leaveEnd').value,
+        description: document.getElementById('leaveDesc').value.trim()
+      };
+
+      try {
+        const res = await fetch('/api/admin/add-leave', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body)
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error);
+
+        UI.alert(data.message, false);
+        e.target.reset();
+        loadLeavesTab();
+      } catch (err) {
+        UI.alert(err.message);
+      }
+    });
+
+    window.deleteLeave = async (leaveId) => {
+      if (!confirm('Bu izin kaydını silmek istediğinize emin misiniz?')) return;
+      try {
+        const res = await fetch(`/api/admin/leaves/${leaveId}`, { method: 'DELETE' });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error);
+        UI.alert(data.message, false);
+        loadLeavesTab();
+      } catch (err) {
+        UI.alert(err.message);
+      }
+    };
+
+    // 4. Puantaj Yükle
     async function loadPuantaj() {
       const date = document.getElementById('puantajDate').value || new Date().toISOString().slice(0, 10);
       document.getElementById('puantajDate').value = date;
@@ -445,29 +661,43 @@
         const data = await res.json();
         const tbody = document.getElementById('puantajTableBody');
 
-        tbody.innerHTML = data.map(r => `
-          <tr>
-            <td>${r.employee_no}</td>
-            <td><strong>${r.first_name} ${r.last_name}</strong></td>
-            <td>${r.department || '-'}</td>
-            <td>${r.check_in_time ? new Date(r.check_in_time).toLocaleTimeString('tr-TR', {hour:'2-digit', minute:'2-digit'}) : '--:--'}</td>
-            <td>${r.check_out_time ? new Date(r.check_out_time).toLocaleTimeString('tr-TR', {hour:'2-digit', minute:'2-digit'}) : '--:--'}</td>
-            <td>${r.check_in_distance ? Math.round(r.check_in_distance) + 'm' : '-'}</td>
-            <td>
-              <span class="badge ${r.status === 'normal' ? 'badge-success' : (r.status === 'late' ? 'badge-warning' : 'badge-gray')}">
-                ${r.status || 'Giriş Yok'}
-              </span>
-            </td>
-            <td>${r.verification_mode || '-'}</td>
-          </tr>
-        `).join('');
+        tbody.innerHTML = data.map(r => {
+          let badgeClass = 'badge-gray';
+          let statusText = 'Gelmeyen';
+
+          if (r.status === 'normal') {
+            badgeClass = 'badge-success';
+            statusText = 'Zamanında';
+          } else if (r.status === 'late') {
+            badgeClass = 'badge-warning';
+            statusText = 'Geç Giriş';
+          } else if (r.status === 'izinli') {
+            badgeClass = 'badge-info';
+            statusText = `İzinli (${r.leave_reason || 'Kayıtlı İzin'})`;
+          }
+
+          return `
+            <tr>
+              <td>${r.employee_no}</td>
+              <td><strong>${r.first_name} ${r.last_name}</strong></td>
+              <td>${r.department || '-'}</td>
+              <td>${r.check_in_time ? new Date(r.check_in_time).toLocaleTimeString('tr-TR', {hour:'2-digit', minute:'2-digit'}) : '--:--'}</td>
+              <td>${r.check_out_time ? new Date(r.check_out_time).toLocaleTimeString('tr-TR', {hour:'2-digit', minute:'2-digit'}) : '--:--'}</td>
+              <td>${r.check_in_distance ? Math.round(r.check_in_distance) + 'm' : '-'}</td>
+              <td>
+                <span class="badge ${badgeClass}">${statusText}</span>
+              </td>
+              <td>${r.status === 'izinli' ? (r.leave_reason || 'İzin') : (r.verification_mode || '-')}</td>
+            </tr>
+          `;
+        }).join('');
       } catch (err) {
         UI.alert('Puantaj yüklenemedi.');
       }
     }
     document.getElementById('btnRefreshPuantaj').addEventListener('click', loadPuantaj);
 
-    // 4. Ayarları Yükle / Kaydet
+    // 5. Ayarları Yükle / Kaydet
     async function loadSettings() {
       try {
         const res = await fetch('/api/admin/settings');
@@ -504,7 +734,7 @@
       }
     });
 
-    // 5. Güvenlik Günlüğü
+    // 6. Güvenlik Günlüğü
     async function loadLogs() {
       try {
         const res = await fetch('/api/admin/security-logs');
@@ -532,6 +762,76 @@
 
     // Başlangıç
     loadDashboard();
+	// Vardiya Sekmesi Tetikleyicisi
+document.querySelector('[data-tab="tabShifts"]').addEventListener('click', loadShifts);
+
+// Excel Okuma ve Yükleme
+document.getElementById('btnUploadShiftsExcel').addEventListener('click', () => {
+  const fileInput = document.getElementById('shiftExcelFile');
+  if (!fileInput.files.length) return UI.alert('Lütfen bir Excel dosyası seçin.');
+
+  const reader = new FileReader();
+  reader.onload = async (e) => {
+    try {
+      const data = new Uint8Array(e.target.result);
+      const workbook = XLSX.read(data, { type: 'array' });
+      const sheet = workbook.Sheets[workbook.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(sheet);
+
+      if (!rows.length) throw new Error('Excel sayfası boş.');
+
+      const res = await fetch('/api/admin/import-shifts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ shifts: rows })
+      });
+      const result = await res.json();
+      if (!res.ok) throw new Error(result.error);
+
+      UI.alert(result.message, false);
+      fileInput.value = '';
+      loadShifts();
+    } catch (err) {
+      UI.alert('Vardiya aktarım hatası: ' + err.message);
+    }
+  };
+  reader.readAsArrayBuffer(fileInput.files[0]);
+});
+
+// Günlük Vardiya Listeleme
+async function loadShifts() {
+  const date = document.getElementById('shiftViewDate').value || new Date().toISOString().slice(0, 10);
+  document.getElementById('shiftViewDate').value = date;
+
+  try {
+    const res = await fetch(`/api/admin/shifts?date=${date}`);
+    const data = await res.json();
+    const tbody = document.getElementById('shiftsTableBody');
+
+    if (!data.length) {
+      tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;">Bu tarihe ait vardiya planı bulunamadı.</td></tr>';
+      return;
+    }
+
+    tbody.innerHTML = data.map(s => `
+      <tr>
+        <td><strong>${s.employee_no}</strong></td>
+        <td>${s.first_name} ${s.last_name}</td>
+        <td>${s.department || '-'}</td>
+        <td>
+          <span class="badge ${s.shift_type === 'SABAH' ? 'badge-warning' : (s.shift_type === 'AKSAM' ? 'badge-info' : 'badge-gray')}">
+            ${s.shift_type}
+          </span>
+        </td>
+        <td>${s.start_time || '--:--'}</td>
+        <td>${s.end_time || '--:--'}</td>
+      </tr>
+    `).join('');
+  } catch (err) {
+    UI.alert('Vardiyalar yüklenemedi.');
+  }
+}
+document.getElementById('btnRefreshShifts').addEventListener('click', loadShifts);
   </script>
 </body>
 </html>

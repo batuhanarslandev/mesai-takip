@@ -2,88 +2,116 @@
 <html lang="tr">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Personel Mesai Takip</title>
-  <link rel="stylesheet" href="/css/style.css">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Kurum Mesai Portali</title>
+  <style>
+    :root {
+      --primary: #1e3a8a;
+      --primary-hover: #172554;
+      --bg: #f8fafc;
+      --card-bg: #ffffff;
+      --border: #e2e8f0;
+      --text: #0f172a;
+      --text-muted: #64748b;
+      --danger: #dc2626;
+      --success: #16a34a;
+      --warning: #ca8a04;
+      --info: #0284c7;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    body { background: var(--bg); color: var(--text); min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 1rem; }
+    .card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 12px; padding: 2rem; width: 100%; max-width: 420px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); }
+    h1 { font-size: 1.3rem; margin-bottom: 0.35rem; text-align: center; color: var(--primary); font-weight: 700; }
+    p.subtitle { font-size: 0.85rem; color: var(--text-muted); text-align: center; margin-bottom: 1.5rem; }
+    .form-group { margin-bottom: 1rem; }
+    label { display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 0.4rem; color: var(--text-muted); }
+    input { width: 100%; padding: 0.75rem; border: 1px solid var(--border); border-radius: 8px; font-size: 1rem; }
+    input:focus { outline: none; border-color: var(--primary); }
+    .btn { width: 100%; padding: 0.8rem; border: none; border-radius: 8px; font-weight: 600; font-size: 1rem; cursor: pointer; transition: 0.2s; }
+    .btn-primary { background: var(--primary); color: #fff; }
+    .btn-primary:hover { background: var(--primary-hover); }
+    .btn-abort { background: #fee2e2; color: var(--danger); border: 1px solid #fecaca; margin-top: 0.75rem; }
+    .btn-abort:hover { background: #fca5a5; }
+    .alert { padding: 0.75rem; border-radius: 8px; font-size: 0.85rem; margin-bottom: 1rem; display: none; text-align: center; font-weight: 500; }
+    .alert-error { background: #fee2e2; color: #b91c1c; border: 1px solid #fecaca; }
+    .alert-success { background: #dcfce7; color: #15803d; border: 1px solid #bbf7d0; }
+    .stat-box { background: #f1f5f9; padding: 1rem; border-radius: 8px; text-align: center; margin-bottom: 1rem; border: 1px solid var(--border); }
+    .stat-box h3 { font-size: 0.8rem; color: var(--text-muted); font-weight: 600; text-transform: uppercase; }
+    .stat-box p { font-size: 1.5rem; font-weight: 700; color: var(--primary); margin-top: 0.25rem; }
+    .badge-shift { display: inline-block; padding: 0.35rem 0.8rem; border-radius: 20px; font-size: 0.8rem; font-weight: 600; background: #e0f2fe; color: var(--info); margin-top: 0.5rem; }
+    .notice-box { text-align: center; padding: 0.85rem; border-radius: 8px; font-weight: 600; font-size: 0.9rem; margin-bottom: 1rem; display: none; }
+    .notice-success { background: #dcfce7; color: #15803d; border: 1px solid #bbf7d0; }
+    .notice-info { background: #e0f2fe; color: var(--info); border: 1px solid #bae6fd; }
+  </style>
   <script src="https://unpkg.com/@simplewebauthn/browser/dist/bundle/index.umd.min.js"></script>
 </head>
 <body>
-  <div class="container">
-    <header class="brand-header">
-      <h1>Kamu Hizmet Portalı</h1>
-      <p>Yüklenici Personel Mobil Mesai Bildirimi</p>
-    </header>
 
+  <div class="card">
+    <h1>Kurum Mesai Portali</h1>
+    <p class="subtitle">Biyometrik Personel Doğrulama</p>
+    
     <div id="alertBox" class="alert"></div>
 
     <!-- 1. GİRİŞ EKRANI -->
-    <div id="loginSection" class="card">
+    <div id="loginSection">
       <form id="loginForm">
         <div class="form-group">
-          <label for="empNo">Personel No</label>
-          <input type="text" id="empNo" class="form-control" required autocomplete="username">
+          <label>Personel No</label>
+          <input type="text" id="empNo" placeholder="Örn: P1001" required autocomplete="username" />
         </div>
         <div class="form-group">
-          <label for="password">Şifre</label>
-          <input type="password" id="password" class="form-control" required autocomplete="current-password">
+          <label>Şifre</label>
+          <input type="password" id="password" placeholder="Şifreniz" required autocomplete="current-password" />
         </div>
-        <button type="submit" class="btn-large btn-primary" style="font-size: 1rem; padding: 0.8rem;">Giriş Yap</button>
+        <button type="submit" class="btn btn-primary">Giriş Yap</button>
       </form>
     </div>
 
     <!-- 2. CİHAZ EŞLEŞTİRME EKRANI -->
-    <div id="pairDeviceSection" class="card" style="display:none; text-align: center;">
-      <h2 style="font-size: 1.1rem; margin-bottom: 0.5rem;">Cihaz Doğrulama</h2>
-      <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1.5rem;">
-        Mesai kaydı yapabilmek için bu cep telefonunu biyometrik imzanız (TouchID / FaceID / Ekran Kilidi) ile eşleştirmeniz gerekmektedir.
+    <div id="pairDeviceSection" style="display: none; text-align: center;">
+      <p style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 1.25rem; line-height: 1.4;">
+        Hesabınızın güvenliği ve mesai kaydı için bu telefonu personelinize zimmetlemeniz gerekmektedir.
       </p>
-      <div id="devicePairSection" style="display: none; text-align: center; margin-top: 1rem;">
-  <button id="btnPairDevice" class="btn btn-primary" style="width: 100%; margin-bottom: 0.75rem;">
-    Bu Telefonu Eşleştir
-  </button>
-  
-  <button id="btnAbortSession" type="button" class="btn" style="width: 100%; background: #fee2e2; color: #dc2626; border: 1px solid #fecaca; font-weight: 600; padding: 0.6rem; border-radius: 6px; cursor: pointer;">
-    Farklı Hesapla Giriş Yap (Çıkış)
-  </button>
-</div>
+      <button id="btnPairDevice" class="btn btn-primary">Bu Telefonu Eşleştir</button>
+      <button id="btnAbortSession" type="button" class="btn btn-abort">Farklı Hesapla Giriş Yap (Çıkış)</button>
     </div>
 
-    <!-- 3. MESAİ PANELİ -->
-    <div id="dashboardSection" style="display:none;">
-      <div class="card">
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 1rem;">
-          <div>
-            <h2 id="userNameLabel" style="font-size: 1.1rem;">Hoş geldiniz</h2>
-            <p id="userSubLabel" style="font-size: 0.8rem; color: var(--text-muted);"></p>
-          </div>
-          <button id="btnLogout" style="background:none; border:none; color:var(--danger); cursor:pointer; font-size:0.85rem; font-weight:600;">Çıkış</button>
-        </div>
-
-        <div class="attendance-box">
-          <div class="time-slot">
-            <label>Giriş</label>
-            <span id="checkInDisplay">--:--</span>
-          </div>
-          <div class="time-slot">
-            <label>Çıkış</label>
-            <span id="checkOutDisplay">--:--</span>
-          </div>
-        </div>
-
-        <button id="btnCheckIn" class="btn-large btn-success" style="display:none;">İŞE BAŞLA</button>
-        <button id="btnCheckOut" class="btn-large btn-danger" style="display:none;">MESAİYİ BİTİR</button>
-        
-        <p id="completedNotice" style="display:none; text-align:center; font-weight:600; color:var(--success); margin-top:1rem;">
-          Bugünkü mesainiz başarıyla tamamlanmıştır.
-        </p>
-
-        <p id="geoStatus" style="font-size: 0.75rem; color: var(--text-muted); text-align: center; margin-top: 1rem;">
-          Konum ve biyometrik kontrol sadece işlem anında sorgulanır.
-        </p>
+    <!-- 3. MESAİ BAŞLATMA / BİTİRME (DASHBOARD) -->
+    <div id="dashboardSection" style="display: none;">
+      <div style="text-align: center; margin-bottom: 1.25rem;">
+        <h2 id="userNameLabel" style="font-size: 1.15rem; color: var(--text); font-weight: 700;"></h2>
+        <p id="userSubLabel" style="font-size: 0.85rem; color: var(--text-muted); margin-top: 0.2rem;"></p>
+        <div id="userShiftBadge" class="badge-shift" style="display: none;"></div>
       </div>
+
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; margin-bottom: 1.25rem;">
+        <div class="stat-box">
+          <h3>GİRİŞ</h3>
+          <p id="checkInDisplay">--:--</p>
+        </div>
+        <div class="stat-box">
+          <h3>ÇIKIŞ</h3>
+          <p id="checkOutDisplay">--:--</p>
+        </div>
+      </div>
+
+      <!-- Mesai Butonları -->
+      <button id="btnCheckIn" class="btn btn-primary" style="display: none;">İşe Başla</button>
+      <button id="btnCheckOut" class="btn btn-primary" style="display: none; background: #ea580c;">İşi Bitir</button>
+      
+      <!-- Mesai Tamamlandı Uyarısı -->
+      <div id="completedNotice" class="notice-box notice-success">
+        Bugünkü mesainiz tamamlandı.
+      </div>
+
+      <!-- İzinli / OFF Durum Uyarısı -->
+      <div id="leaveNotice" class="notice-box notice-info"></div>
+
+      <button id="btnLogout" type="button" class="btn btn-abort">Oturumu Kapat</button>
     </div>
   </div>
 
-  <script src="/js/app.js" type="module"></script>
+  <script src="/js/app.js"></script>
 </body>
 </html>

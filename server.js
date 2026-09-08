@@ -14,21 +14,52 @@ import {
 import { db, initDatabase, verifyPassword, hashPassword } from './database.js';
 import { calculateHaversineDistance, evaluateShiftStatus } from './geofence.js';
 import { createSession, getSession, destroySession, logSecurityEvent } from './auth.js';
-
+// Türkiye (GMT+3) bugünün tarihini 'YYYY-MM-DD' olarak verir
+function getTurkeyToday() {
+  return new Intl.DateTimeFormat('fr-CA', { timeZone: 'Europe/Istanbul' }).format(new Date());
+}
 dotenv.config();
 initDatabase();
 
-// credentials tablosunda device_fingerprint sütunu yoksa dinamik olarak ekle
+// Tablo şemalarını dinamik olarak genişlet
 try {
   db.exec('ALTER TABLE credentials ADD COLUMN device_fingerprint TEXT;');
-} catch (_) {
-  // Sütun zaten mevcutsa hatayı yut
-}
+} catch (_) {}
+
+try {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS shifts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      shift_date TEXT NOT NULL,
+      shift_type TEXT NOT NULL,
+      start_time TEXT,
+      end_time TEXT,
+      FOREIGN KEY(user_id) REFERENCES users(id),
+      UNIQUE(user_id, shift_date)
+    );
+  `);
+} catch (_) {}
+
+try {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS leaves (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      leave_type TEXT NOT NULL,
+      start_date TEXT NOT NULL,
+      end_date TEXT NOT NULL,
+      description TEXT,
+      created_at DATETIME DEFAULT datetime('now', '+3 hours'),
+      FOREIGN KEY(user_id) REFERENCES users(id)
+    );
+  `);
+} catch (_) {}
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = Fastify({ 
   logger: true,
-  trustProxy: true // Bulut proxy arkasındaki IP ve domain'i doğru yakalar
+  trustProxy: true
 });
 
 const RP_NAME = process.env.RP_NAME || 'Kurum Mesai Portali';
@@ -40,7 +71,6 @@ app.register(fastifyStatic, {
   prefix: '/'
 });
 
-// Dinamik Domain & Origin Çözücü
 function getWebAuthnConfig(req) {
   const host = req.headers['x-forwarded-host'] || req.headers.host || 'localhost';
   const cleanHost = host.split(':')[0];
@@ -69,7 +99,7 @@ function authGuard(req, reply, allowedRoles = ['employee', 'admin']) {
 // KULLANICI / ADMİN GİRİŞİ & OTURUM
 // ----------------------------------------------------
 app.post('/api/auth/login', async (req, reply) => {
-  const { employee_no, password } = req.body;
+  const { employee_no, password, device_fingerprint } = req.body;
   const ip = req.ip;
   const ua = req.headers['user-agent'];
 
@@ -77,6 +107,25 @@ app.post('/api/auth/login', async (req, reply) => {
   if (!user || !verifyPassword(password, user.password_hash)) {
     logSecurityEvent(user ? user.id : null, 'auth_failed', ip, ua, { employee_no });
     return reply.status(400).send({ error: 'Personel numarası veya şifre hatalı.' });
+  }
+
+  // Cihaz Kilidi: Telefon başka personele aitse oturum açtırılmaz
+  if (user.role !== 'admin' && device_fingerprint) {
+    const boundToOther = db.prepare(`
+      SELECT u.employee_no, u.first_name, u.last_name 
+      FROM credentials c
+      JOIN users u ON c.user_id = u.id
+      WHERE c.device_fingerprint = ? AND c.user_id != ? AND c.is_active = 1
+    `).get(device_fingerprint, user.id);
+
+    if (boundToOther) {
+      logSecurityEvent(user.id, 'login_blocked_device_sharing', ip, ua, {
+        registered_to: boundToOther.employee_no
+      });
+      return reply.status(403).send({
+        error: `GÜVENLİK ENGELİ: Bu telefon [${boundToOther.employee_no} - ${boundToOther.first_name} ${boundToOther.last_name}] personeline aittir. Başka personel adına giriş yapılamaz!`
+      });
+    }
   }
 
   const sessionId = createSession(user.id, user.role);
@@ -114,20 +163,22 @@ app.get('/api/auth/me', async (req, reply) => {
   const session = authGuard(req, reply);
   if (!session) return;
 
-  const user = db.prepare('SELECT id, employee_no, first_name, last_name, role, auth_method FROM users WHERE id = ?').get(session.userId);
+  const user = db.prepare('SELECT id, employee_no, first_name, last_name, role, department, auth_method FROM users WHERE id = ?').get(session.userId);
   const credential = db.prepare('SELECT id FROM credentials WHERE user_id = ? AND is_active = 1').get(user.id);
 
   const today = new Date().toISOString().slice(0, 10);
   const attendance = db.prepare('SELECT * FROM attendances WHERE user_id = ? AND work_date = ?').get(user.id, today);
+  const shift = db.prepare('SELECT * FROM shifts WHERE user_id = ? AND shift_date = ?').get(user.id, today);
 
   return {
     user: { ...user, has_device: !!credential },
-    today_attendance: attendance || null
+    today_attendance: attendance || null,
+    today_shift: shift || null
   };
 });
 
 // ----------------------------------------------------
-// WEBAUTHN / CİHAZ EŞLEŞTİRME (DONANIM KİLİDİ DAHİL)
+// WEBAUTHN / CİHAZ EŞLEŞTİRME
 // ----------------------------------------------------
 app.get('/api/webauthn/register-options', async (req, reply) => {
   try {
@@ -145,7 +196,7 @@ app.get('/api/webauthn/register-options', async (req, reply) => {
     const options = await generateRegistrationOptions({
       rpName: RP_NAME,
       rpID: rpID,
-      userID: new TextEncoder().encode(String(user.id)),
+      userID: Buffer.from(String(user.id)),
       userName: user.employee_no,
       userDisplayName: `${user.first_name} ${user.last_name}`,
       attestationType: 'none',
@@ -177,7 +228,6 @@ app.post('/api/webauthn/register-verify', async (req, reply) => {
       return reply.status(400).send({ error: 'Cihaz donanım kimliği doğrulanamadı.' });
     }
 
-    // 1. KRİTİK KONTROL: Bu fiziksel cihaz başka bir personele zaten zimmetli mi?
     const existingBinding = db.prepare(`
       SELECT c.id, u.employee_no, u.first_name, u.last_name 
       FROM credentials c
@@ -192,7 +242,6 @@ app.post('/api/webauthn/register-verify', async (req, reply) => {
         fingerprint: device_fingerprint
       });
 
-      // GÜNCELLEME: Oturumu sıfırla ki kullanıcı yanlış hesapta takılı kalmasın
       if (session.sessionId) destroySession(session.sessionId);
       reply.clearCookie('session_id', { path: '/' });
 
@@ -233,7 +282,6 @@ app.post('/api/webauthn/register-verify', async (req, reply) => {
     const clientTransports = attestationResponse.response?.transports || [];
     const finalTransports = clientTransports.length > 0 ? clientTransports : ['internal'];
 
-    // Donanım parmak izi ile birlikte kaydet
     db.prepare(`
       INSERT INTO credentials (user_id, credential_id, public_key, counter, transports, device_name, device_fingerprint)
       VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -293,7 +341,7 @@ app.get('/api/webauthn/assertion-options', async (req, reply) => {
 });
 
 // ----------------------------------------------------
-// MESAİ İŞLEMLERİ (GEOFENCE & WEBAUTHN & DONANIM DENETİMİ)
+// MESAİ İŞLEMLERİ (VARDİYA + GEOFENCE + WEBAUTHN + DONANIM)
 // ----------------------------------------------------
 app.post('/api/attendance/check-in', async (req, reply) => {
   try {
@@ -313,17 +361,41 @@ app.post('/api/attendance/check-in', async (req, reply) => {
       return reply.status(400).send({ error: 'Yetkilendirilmiş donanım cihazı bulunamadı.' });
     }
 
-    // DONANIM DENETİMİ: Başka bir cihazdan veya yetkisiz tarayıcıdan deneme kontrolü
+    // 1. Cihaz doğrulama
     if (cred.device_fingerprint && device_fingerprint && cred.device_fingerprint !== device_fingerprint) {
       logSecurityEvent(session.userId, 'unauthorized_device_attempt', ip, ua, {
         saved_fp: cred.device_fingerprint,
         attempted_fp: device_fingerprint
       });
+      if (session.sessionId) destroySession(session.sessionId);
+      reply.clearCookie('session_id', { path: '/' });
       return reply.status(403).send({ 
-        error: 'GÜVENLİK İHLALİ: İşlem yapılan cihaz, sisteme kayıtlı olan fiziksel telefonunuz ile uyuşmuyor!' 
+        error: 'GÜVENLİK İHLALİ: İşlem yapılan cihaz, kayıtlı telefonunuz ile uyuşmuyor!' 
       });
     }
 
+    // 2. Çift zimmet engeli
+    if (device_fingerprint) {
+      const boundToOther = db.prepare(`
+        SELECT u.employee_no, u.first_name, u.last_name 
+        FROM credentials c
+        JOIN users u ON c.user_id = u.id
+        WHERE c.device_fingerprint = ? AND c.user_id != ? AND c.is_active = 1
+      `).get(device_fingerprint, session.userId);
+
+      if (boundToOther) {
+        logSecurityEvent(session.userId, 'device_sharing_checkin_blocked', ip, ua, {
+          registered_to: boundToOther.employee_no
+        });
+        if (session.sessionId) destroySession(session.sessionId);
+        reply.clearCookie('session_id', { path: '/' });
+        return reply.status(403).send({
+          error: `GÜVENLİK İHLALİ: Bu telefon [${boundToOther.employee_no} - ${boundToOther.first_name} ${boundToOther.last_name}] adına kayıtlıdır. Başka personel adına mesai başlatılamaz!`
+        });
+      }
+    }
+
+    // Geofence denetimi
     const settingsRows = db.prepare('SELECT key, value FROM settings').all();
     const settings = Object.fromEntries(settingsRows.map(r => [r.key, r.value]));
 
@@ -347,6 +419,7 @@ app.post('/api/attendance/check-in', async (req, reply) => {
       });
     }
 
+    // WebAuthn biyometrik doğrulama
     const expectedChallenge = webauthnChallenges.get(session.userId);
     webauthnChallenges.delete(session.userId);
 
@@ -370,7 +443,7 @@ app.post('/api/attendance/check-in', async (req, reply) => {
     }
 
     const newCounter = verification.authenticationInfo?.newCounter ?? cred.counter;
-    db.prepare('UPDATE credentials SET counter = ?, last_used_at = CURRENT_TIMESTAMP WHERE id = ?')
+    db.prepare('UPDATE credentials SET counter = ?, last_used_at = datetime('now', '+3 hours') WHERE id = ?')
       .run(newCounter, cred.id);
 
     const now = new Date();
@@ -381,18 +454,21 @@ app.post('/api/attendance/check-in', async (req, reply) => {
       return reply.status(400).send({ error: 'Bugün için mesai giriş kaydınız zaten bulunmaktadır.' });
     }
 
-    const shiftStatus = evaluateShiftStatus(now, settings.work_start_time, parseInt(settings.late_tolerance_minutes));
+    // Dinamik Vardiya Başlangıcı Kontrolü
+    const shift = db.prepare('SELECT * FROM shifts WHERE user_id = ? AND shift_date = ?').get(session.userId, today);
+    const effectiveStartTime = (shift && shift.start_time) ? shift.start_time : settings.work_start_time;
+    const shiftStatus = evaluateShiftStatus(now, effectiveStartTime, parseInt(settings.late_tolerance_minutes));
 
     if (!existing) {
       db.prepare(`
         INSERT INTO attendances (
           user_id, work_date, check_in_time, check_in_verified, check_in_accuracy, check_in_distance, status, verification_mode
-        ) VALUES (?, ?, CURRENT_TIMESTAMP, 1, ?, ?, ?, 'webauthn_gps')
+        ) VALUES (?, ?, datetime('now', '+3 hours'), 1, ?, ?, ?, 'webauthn_gps')
       `).run(session.userId, today, coords.accuracy, distance, shiftStatus);
     } else {
       db.prepare(`
         UPDATE attendances SET
-          check_in_time = CURRENT_TIMESTAMP,
+          check_in_time = datetime('now', '+3 hours'),
           check_in_verified = 1,
           check_in_accuracy = ?,
           check_in_distance = ?,
@@ -403,9 +479,10 @@ app.post('/api/attendance/check-in', async (req, reply) => {
     }
 
     const formattedTime = now.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
+    const shiftName = shift ? ` [${shift.shift_type}]` : '';
     return {
       success: true,
-      message: `Mesainiz başladı. Giriş saati: ${formattedTime} (${shiftStatus === 'late' ? 'Geç Giriş' : 'Zamanında'})`
+      message: `Mesainiz başladı${shiftName}. Giriş saati: ${formattedTime} (${shiftStatus === 'late' ? 'Geç Giriş' : 'Zamanında'})`
     };
   } catch (err) {
     req.log.error(err);
@@ -431,15 +508,12 @@ app.post('/api/attendance/check-out', async (req, reply) => {
       return reply.status(400).send({ error: 'Yetkilendirilmiş donanım cihazı bulunamadı.' });
     }
 
-    // DONANIM DENETİMİ: Çıkış anında cihaz doğrulaması
     if (cred.device_fingerprint && device_fingerprint && cred.device_fingerprint !== device_fingerprint) {
-      logSecurityEvent(session.userId, 'unauthorized_device_attempt', ip, ua, {
-        action: 'check-out',
-        saved_fp: cred.device_fingerprint,
-        attempted_fp: device_fingerprint
-      });
+      logSecurityEvent(session.userId, 'unauthorized_device_attempt', ip, ua, { action: 'check-out' });
+      if (session.sessionId) destroySession(session.sessionId);
+      reply.clearCookie('session_id', { path: '/' });
       return reply.status(403).send({ 
-        error: 'GÜVENLİK İHLALİ: Çıkış yapılan cihaz, sisteme kayıtlı olan fiziksel telefonunuz ile uyuşmuyor!' 
+        error: 'GÜVENLİK İHLALİ: Çıkış yapılan cihaz kayıtlı telefonunuz ile uyuşmuyor!' 
       });
     }
 
@@ -492,12 +566,12 @@ app.post('/api/attendance/check-out', async (req, reply) => {
     }
 
     const newCounter = verification.authenticationInfo?.newCounter ?? cred.counter;
-    db.prepare('UPDATE credentials SET counter = ?, last_used_at = CURRENT_TIMESTAMP WHERE id = ?')
+    db.prepare('UPDATE credentials SET counter = ?, last_used_at = datetime('now', '+3 hours') WHERE id = ?')
       .run(newCounter, cred.id);
 
     db.prepare(`
       UPDATE attendances SET
-        check_out_time = CURRENT_TIMESTAMP,
+        check_out_time = datetime('now', '+3 hours'),
         check_out_verified = 1,
         check_out_accuracy = ?,
         check_out_distance = ?
@@ -537,14 +611,14 @@ app.post('/api/terminal/check-in', async (req, reply) => {
 
   db.prepare(`
     INSERT INTO attendances (user_id, work_date, check_in_time, check_in_verified, status, verification_mode)
-    VALUES (?, ?, CURRENT_TIMESTAMP, 1, 'normal', 'terminal_pin')
+    VALUES (?, ?, datetime('now', '+3 hours'), 1, 'normal', 'terminal_pin')
   `).run(user.id, today);
 
   return { success: true, message: `${user.first_name} ${user.last_name} için terminal girişi yapıldı.` };
 });
 
 // ----------------------------------------------------
-// YÖNETİM (ADMIN) ENDPOINT'LERİ
+// YÖNETİM (ADMIN) - PERSONEL YÖNETİMİ & TOPLU AKTARIM
 // ----------------------------------------------------
 app.get('/api/admin/employees', async (req, reply) => {
   const session = authGuard(req, reply, ['admin']);
@@ -555,7 +629,7 @@ app.get('/api/admin/employees', async (req, reply) => {
            c.id as has_device, c.last_used_at as device_last_used
     FROM users u
     LEFT JOIN credentials c ON u.id = c.user_id AND c.is_active = 1
-    WHERE u.role = 'employee'
+    WHERE u.role = 'employee' AND u.is_active = 1
     ORDER BY u.employee_no ASC
   `).all();
 
@@ -572,8 +646,17 @@ app.post('/api/admin/add-employee', async (req, reply) => {
     return reply.status(400).send({ error: 'Sicil no, ad, soyad ve şifre zorunludur.' });
   }
 
-  const existing = db.prepare('SELECT id FROM users WHERE employee_no = ?').get(employee_no);
+  const existing = db.prepare('SELECT id, is_active FROM users WHERE employee_no = ?').get(employee_no);
   if (existing) {
+    if (existing.is_active === 0) {
+      // Daha önce pasife alınmışsa yeniden aktifleştir
+      const passwordHash = hashPassword(password);
+      db.prepare(`
+        UPDATE users SET first_name = ?, last_name = ?, password_hash = ?, department = ?, is_active = 1
+        WHERE id = ?
+      `).run(first_name, last_name, passwordHash, department || 'Genel', existing.id);
+      return { success: true, message: `${employee_no} sicilli personel yeniden aktifleştirildi.` };
+    }
     return reply.status(400).send({ error: `${employee_no} sicil numaralı personel zaten sistemde kayıtlı.` });
   }
 
@@ -587,7 +670,7 @@ app.post('/api/admin/add-employee', async (req, reply) => {
   return { success: true, message: `${first_name} ${last_name} başarıyla sisteme eklendi.` };
 });
 
-app.post('/api/admin/import-employees', async (req, reply) => {
+app.post('/api/admin/bulk-import-employees', async (req, reply) => {
   const session = authGuard(req, reply, ['admin']);
   if (!session) return;
 
@@ -602,15 +685,22 @@ app.post('/api/admin/import-employees', async (req, reply) => {
     ON CONFLICT(employee_no) DO UPDATE SET
       first_name = excluded.first_name,
       last_name = excluded.last_name,
-      department = excluded.department
+      department = excluded.department,
+      is_active = 1
   `);
 
   let count = 0;
   const insertMany = db.transaction((list) => {
     for (const emp of list) {
-      if (emp.no && emp.name && emp.surname) {
-        const hashed = hashPassword(emp.pass || '123456');
-        insertStmt.run(String(emp.no), emp.name, emp.surname, hashed, emp.dept || 'Genel');
+      const empNo = String(emp.sicil || emp.employee_no || emp['Sicil No'] || emp['Sicil'] || '').trim();
+      const firstName = String(emp.ad || emp.first_name || emp['Ad'] || emp['İsim'] || '').trim();
+      const lastName = String(emp.soyad || emp.last_name || emp['Soyad'] || '').trim();
+      const dept = String(emp.bolum || emp.department || emp['Bölüm'] || emp['Departman'] || 'Genel').trim();
+      const rawPass = String(emp.sifre || emp.password || emp['Şifre'] || '123456').trim();
+
+      if (empNo && firstName && lastName) {
+        const hashed = hashPassword(rawPass);
+        insertStmt.run(empNo, firstName, lastName, hashed, dept);
         count++;
       }
     }
@@ -625,6 +715,149 @@ app.post('/api/admin/import-employees', async (req, reply) => {
   }
 });
 
+// İŞTEN ÇIKARMA / PASİFE ALMA (SOFT-DELETE)
+app.post('/api/admin/deactivate-employee', async (req, reply) => {
+  const session = authGuard(req, reply, ['admin']);
+  if (!session) return;
+
+  const { user_id, reason } = req.body;
+  if (!user_id) return reply.status(400).send({ error: 'Personel ID belirtilmelidir.' });
+
+  // 1. Personeli pasif yap
+  db.prepare('UPDATE users SET is_active = 0 WHERE id = ?').run(user_id);
+
+  // 2. Güvenlik için zimmetli cihaz kaydını da kaldır
+  db.prepare('DELETE FROM credentials WHERE user_id = ?').run(user_id);
+
+  // 3. Denetim günlüğüne (audit log) kaydet
+  db.prepare(`
+    INSERT INTO audit_logs (admin_id, target_user_id, action, reason)
+    VALUES (?, ?, 'employee_deactivated', ?)
+  `).run(session.userId, user_id, reason || 'İşten ayrıldı');
+
+  return { success: true, message: 'Personel başarıyla pasife alındı, sisteme erişimi engellendi.' };
+});
+
+// ----------------------------------------------------
+// YÖNETİM (ADMIN) - VARDİYA YÖNETİMİ
+// ----------------------------------------------------
+app.post('/api/admin/import-shifts', async (req, reply) => {
+  const session = authGuard(req, reply, ['admin']);
+  if (!session) return;
+
+  const { shifts } = req.body;
+  if (!Array.isArray(shifts) || shifts.length === 0) {
+    return reply.status(400).send({ error: 'Geçerli bir vardiya listesi bulunamadı.' });
+  }
+
+  const findUser = db.prepare('SELECT id FROM users WHERE employee_no = ?');
+  const upsertShift = db.prepare(`
+    INSERT INTO shifts (user_id, shift_date, shift_type, start_time, end_time)
+    VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT(user_id, shift_date) DO UPDATE SET
+      shift_type = excluded.shift_type,
+      start_time = excluded.start_time,
+      end_time = excluded.end_time
+  `);
+
+  let count = 0;
+  const insertMany = db.transaction((list) => {
+    for (const item of list) {
+      const empNo = String(item.sicil || item.employee_no || item['Sicil No'] || item['Sicil'] || '').trim();
+      const date = String(item.tarih || item.date || item['Tarih'] || '').trim();
+      const type = String(item.vardiya || item.shift || item['Vardiya'] || '').toUpperCase().trim();
+
+      if (!empNo || !date || !type) continue;
+
+      const user = findUser.get(empNo);
+      if (!user) continue;
+
+      let startTime = null;
+      let endTime = null;
+
+      if (type === 'SABAH') {
+        startTime = '07:00';
+        endTime = '15:30';
+      } else if (type === 'AKSAM') {
+        startTime = '14:30';
+        endTime = '23:00';
+      }
+
+      upsertShift.run(user.id, date, type, startTime, endTime);
+      count++;
+    }
+  });
+
+  try {
+    insertMany(shifts);
+    return { success: true, message: `${count} adet günlük vardiya planı başarıyla işlendi.` };
+  } catch (err) {
+    req.log.error(err);
+    return reply.status(500).send({ error: `Vardiya aktarım hatası: ${err.message}` });
+  }
+});
+
+app.get('/api/admin/shifts', async (req, reply) => {
+  const session = authGuard(req, reply, ['admin']);
+  if (!session) return;
+
+  const date = req.query.date || new Date().toISOString().slice(0, 10);
+  const records = db.prepare(`
+    SELECT s.*, u.employee_no, u.first_name, u.last_name, u.department
+    FROM shifts s
+    JOIN users u ON s.user_id = u.id
+    WHERE s.shift_date = ? AND u.is_active = 1
+    ORDER BY u.employee_no ASC
+  `).all(date);
+
+  return records;
+});
+
+// ----------------------------------------------------
+// YÖNETİM (ADMIN) - İZİN YÖNETİMİ
+// ----------------------------------------------------
+app.post('/api/admin/add-leave', async (req, reply) => {
+  const session = authGuard(req, reply, ['admin']);
+  if (!session) return;
+
+  const { user_id, leave_type, start_date, end_date, description } = req.body;
+  if (!user_id || !start_date || !end_date) {
+    return reply.status(400).send({ error: 'Personel ve tarih aralığı zorunludur.' });
+  }
+
+  db.prepare(`
+    INSERT INTO leaves (user_id, leave_type, start_date, end_date, description)
+    VALUES (?, ?, ?, ?, ?)
+  `).run(user_id, leave_type || 'Yıllık İzin', start_date, end_date, description || '');
+
+  return { success: true, message: 'İzin kaydı başarıyla oluşturuldu.' };
+});
+
+app.get('/api/admin/leaves', async (req, reply) => {
+  const session = authGuard(req, reply, ['admin']);
+  if (!session) return;
+
+  const leaves = db.prepare(`
+    SELECT l.*, u.employee_no, u.first_name, u.last_name, u.department
+    FROM leaves l
+    JOIN users u ON l.user_id = u.id
+    ORDER BY l.start_date DESC
+  `).all();
+
+  return leaves;
+});
+
+app.delete('/api/admin/leaves/:id', async (req, reply) => {
+  const session = authGuard(req, reply, ['admin']);
+  if (!session) return;
+
+  db.prepare('DELETE FROM leaves WHERE id = ?').run(req.params.id);
+  return { success: true, message: 'İzin kaydı başarıyla silindi.' };
+});
+
+// ----------------------------------------------------
+// YÖNETİM (ADMIN) - DASHBOARD & PUANTAJ (VARDİYA & İZİN ENTEGRELİ)
+// ----------------------------------------------------
 app.get('/api/admin/dashboard', async (req, reply) => {
   const session = authGuard(req, reply, ['admin']);
   if (!session) return;
@@ -632,6 +865,16 @@ app.get('/api/admin/dashboard', async (req, reply) => {
   const today = new Date().toISOString().slice(0, 10);
   const totalEmployees = db.prepare("SELECT COUNT(*) as count FROM users WHERE role = 'employee' AND is_active = 1").get().count;
   const attendanceToday = db.prepare('SELECT * FROM attendances WHERE work_date = ?').all(today);
+
+  // İzinli ve OFF (Haftalık İzin) olan personeller
+  const onLeaveCount = db.prepare(`
+    SELECT COUNT(DISTINCT u.id) as count 
+    FROM users u
+    LEFT JOIN leaves l ON u.id = l.user_id AND (? BETWEEN l.start_date AND l.end_date)
+    LEFT JOIN shifts s ON u.id = s.user_id AND s.shift_date = ?
+    WHERE u.role = 'employee' AND u.is_active = 1
+      AND (l.id IS NOT NULL OR s.shift_type = 'OFF')
+  `).get(today, today).count;
 
   const presentCount = attendanceToday.filter(a => a.check_in_time).length;
   const lateCount = attendanceToday.filter(a => a.status === 'late').length;
@@ -642,7 +885,8 @@ app.get('/api/admin/dashboard', async (req, reply) => {
   return {
     totalEmployees,
     presentCount,
-    absentCount: Math.max(0, totalEmployees - presentCount),
+    onLeaveCount,
+    absentCount: Math.max(0, totalEmployees - presentCount - onLeaveCount),
     lateCount,
     checkedOutCount,
     missingCheckouts,
@@ -663,17 +907,27 @@ app.get('/api/admin/puantaj', async (req, reply) => {
       u.first_name,
       u.last_name,
       u.department,
+      s.shift_type,
+      s.start_time as shift_start,
+      s.end_time as shift_end,
       a.id as attendance_id,
       a.check_in_time,
       a.check_out_time,
-      a.status,
-      a.verification_mode,
-      a.check_in_distance
+      a.check_in_distance,
+      CASE 
+        WHEN a.check_in_time IS NOT NULL THEN COALESCE(a.status, 'normal')
+        WHEN l.id IS NOT NULL THEN 'izinli'
+        WHEN s.shift_type = 'OFF' THEN 'off'
+        ELSE 'gelmedi'
+      END as status,
+      COALESCE(l.leave_type, CASE WHEN s.shift_type = 'OFF' THEN 'Haftalık İzin' ELSE NULL END) as leave_reason
     FROM users u
+    LEFT JOIN shifts s ON u.id = s.user_id AND s.shift_date = ?
     LEFT JOIN attendances a ON u.id = a.user_id AND a.work_date = ?
+    LEFT JOIN leaves l ON u.id = l.user_id AND (? BETWEEN l.start_date AND l.end_date)
     WHERE u.role = 'employee' AND u.is_active = 1
     ORDER BY u.employee_no ASC
-  `).all(date);
+  `).all(date, date, date);
 
   return records;
 });
@@ -751,7 +1005,6 @@ app.post('/api/admin/settings', async (req, reply) => {
   return { success: true, message: 'Sistem parametreleri güncellendi.' };
 });
 
-// Güvenlik Günlüğü (İsteğe bağlı ?type=device filtresi destekler)
 app.get('/api/admin/security-logs', async (req, reply) => {
   const session = authGuard(req, reply, ['admin']);
   if (!session) return;
@@ -764,7 +1017,7 @@ app.get('/api/admin/security-logs', async (req, reply) => {
   `;
 
   if (filterType === 'device') {
-    query += ` WHERE s.event_type IN ('device_sharing_attempt', 'unauthorized_device_attempt') `;
+    query += ` WHERE s.event_type IN ('device_sharing_attempt', 'unauthorized_device_attempt', 'device_sharing_checkin_blocked', 'login_blocked_device_sharing') `;
   }
 
   query += ` ORDER BY s.created_at DESC LIMIT 100 `;

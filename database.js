@@ -141,3 +141,16 @@ export function initDatabase() {
     console.log('[BILGI] Varsayılan yönetici hesabı oluşturuldu: admin / Admin123!');
   }
 }
+// database.js içine:
+db.exec(`
+  CREATE TABLE IF NOT EXISTS leaves (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    leave_type TEXT NOT NULL,       -- 'Yillik', 'Rapor', 'Idari', 'Ucretsiz'
+    start_date TEXT NOT NULL,       -- '2026-09-07'
+    end_date TEXT NOT NULL,         -- '2026-09-10'
+    description TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(user_id) REFERENCES users(id)
+  );
+`);
